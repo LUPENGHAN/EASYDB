@@ -19,19 +19,19 @@ public interface TransactionManager {
     //查询事务的进行状态
     boolean isActive(long xid);
     boolean isCommitted(long xid);
-    boolean isAnort(long xid);
+    boolean isAbort(long xid);
 
 
 //    boolean isRollbackRequired(long xid);
 
 
     //关闭事务管理器
-    void close(long xid);
+    void close( );
 
-    // 创建事务管理器
-    public static TransactionManager create(String path);
-
-    // 打开已存在的事务管理器
-    public static TransactionManager open(String path);
+//    // 创建事务管理器
+//    public static TransactionManager create(String path);
+//
+//    // 打开已存在的事务管理器
+//    public static TransactionManager open(String path);
 
 }
