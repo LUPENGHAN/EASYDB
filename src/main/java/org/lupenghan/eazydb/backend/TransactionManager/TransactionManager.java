@@ -1,4 +1,4 @@
-package org.lupenghan.eazydb.backend.tm;
+package org.lupenghan.eazydb.backend.TransactionManager;
 
 public interface TransactionManager {
     /*
@@ -28,10 +28,5 @@ public interface TransactionManager {
     //关闭事务管理器
     void close( );
 
-//    // 创建事务管理器
-//    public static TransactionManager create(String path);
-//
-//    // 打开已存在的事务管理器
-//    public static TransactionManager open(String path);
 
 }

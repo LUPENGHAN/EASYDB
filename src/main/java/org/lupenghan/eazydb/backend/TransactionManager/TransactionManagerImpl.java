@@ -1,4 +1,4 @@
-package org.lupenghan.eazydb.backend.tm;
+package org.lupenghan.eazydb.backend.TransactionManager;
 
 import java.io.File;
 import java.io.IOException;
@@ -113,6 +113,7 @@ public class TransactionManagerImpl implements TransactionManager {
     public void close( ) {
         try {
             xidFile.close();
+            fc.close();
         } catch (IOException e) {
             throw new RuntimeException("Failed to close transaction file", e);
         }

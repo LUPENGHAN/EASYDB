@@ -3,8 +3,8 @@ package backend.tm;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
-import org.lupenghan.eazydb.backend.tm.TransactionManager;
-import org.lupenghan.eazydb.backend.tm.TransactionManagerImpl;
+import org.lupenghan.eazydb.backend.TransactionManager.TransactionManager;
+import org.lupenghan.eazydb.backend.TransactionManager.TransactionManagerImpl;
 
 import java.io.File;
 
