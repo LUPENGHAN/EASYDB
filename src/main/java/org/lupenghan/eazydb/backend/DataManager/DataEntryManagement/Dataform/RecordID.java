@@ -8,19 +8,9 @@ import org.lupenghan.eazydb.backend.DataManager.PageManager.Dataform.PageID;
  */
 @Getter
 public class RecordID {
-    /**
-     * -- GETTER --
-     *  获取页面ID
-     *
-     * @return 页面ID
-     */
+
     private PageID pageID;  // 页面ID
-    /**
-     * -- GETTER --
-     *  获取槽号
-     *
-     * @return 槽号
-     */
+
     private int slotNum;    // 槽号
 
     /**

@@ -24,42 +24,12 @@ public class RecordHeader {
     // 头部总大小
     public static final int HEADER_SIZE = LENGTH_SIZE + STATUS_SIZE + XID_SIZE;
 
-    /**
-     * -- GETTER --
-     *  获取记录长度
-     *
-     *
-     * -- SETTER --
-     *  设置记录长度
-     *
-     @return 记录长度
-      * @param length 记录长度
-     */
+
     // 头部字段
     private short length;     // 记录总长度（包括头部）
-    /**
-     * -- GETTER --
-     *  获取记录状态
-     *
-     *
-     * -- SETTER --
-     *  设置记录状态
-     *
-     @return 记录状态
-      * @param status 记录状态
-     */
+
     private byte status;      // 记录状态
-    /**
-     * -- GETTER --
-     *  获取事务ID
-     *
-     *
-     * -- SETTER --
-     *  设置事务ID
-     *
-     @return 事务ID
-      * @param xid 事务ID
-     */
+
     private long xid;         // 事务ID
 
     /**

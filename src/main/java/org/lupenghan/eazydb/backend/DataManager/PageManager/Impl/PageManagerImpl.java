@@ -6,27 +6,40 @@ import org.lupenghan.eazydb.backend.DataManager.PageManager.Dataform.PageID;
 import org.lupenghan.eazydb.backend.DataManager.PageManager.Page;
 import org.lupenghan.eazydb.backend.DataManager.PageManager.PageManager;
 
-import java.io.IOException;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.logging.Logger;
 
 /**
- * 页面管理器的实现
+ * 页面管理器的增强实现，支持动态设置日志管理器
  */
 public class PageManagerImpl implements PageManager {
+    private static final Logger LOGGER = Logger.getLogger(PageManagerImpl.class.getName());
+
     private final BufferPoolManager bufferPoolManager;
-    private final LogManager logManager;
+    private LogManager logManager;
     private final ReentrantLock lock;
 
     /**
      * 创建页面管理器
      * @param bufferPoolManager 缓冲池管理器
-     * @param logManager 日志管理器
+     * @param logManager 日志管理器，可以为null（后续通过setLogManager设置）
      */
     public PageManagerImpl(BufferPoolManager bufferPoolManager, LogManager logManager) {
         this.bufferPoolManager = bufferPoolManager;
         this.logManager = logManager;
         this.lock = new ReentrantLock();
     }
+
+    /**
+     * 设置日志管理器
+     * 这个方法用于解决循环依赖问题
+     * @param logManager 日志管理器
+     */
+    public void setLogManager(LogManager logManager) {
+        this.logManager = logManager;
+        LOGGER.info("日志管理器已设置到页面管理器");
+    }
+
     @Override
     public Page pinPage(PageID pageID) {
         // 直接使用缓冲池管理器的pinPage方法
@@ -57,6 +70,22 @@ public class PageManagerImpl implements PageManager {
     public boolean write(PageID pageID, int offset, byte[] data, long xid) {
         lock.lock();
         try {
+            if (logManager == null) {
+                LOGGER.warning("日志管理器未设置，写入操作未记录日志");
+                // 执行写入，但不记录日志
+                Page page = bufferPoolManager.pinPage(pageID);
+                if (page == null) {
+                    return false;
+                }
+
+                try {
+                    page.writeData(offset, data);
+                    return true;
+                } finally {
+                    bufferPoolManager.unpinPage(pageID, true); // 写操作会修改页面
+                }
+            }
+
             Page page = bufferPoolManager.pinPage(pageID);
             if (page == null) {
                 return false;
@@ -130,7 +159,11 @@ public class PageManagerImpl implements PageManager {
             bufferPoolManager.flushAllPages();
 
             // 然后创建日志检查点
-            logManager.checkpoint();
+            if (logManager != null) {
+                logManager.checkpoint();
+            } else {
+                LOGGER.warning("日志管理器未设置，无法创建检查点");
+            }
         } finally {
             lock.unlock();
         }
@@ -140,6 +173,12 @@ public class PageManagerImpl implements PageManager {
     public void recover() {
         lock.lock();
         try {
+            // 如果日志管理器不存在，无法执行恢复
+            if (logManager == null) {
+                LOGGER.warning("日志管理器未设置，无法执行恢复");
+                return;
+            }
+
             // 执行日志恢复过程
             logManager.recover();
 

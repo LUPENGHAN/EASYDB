@@ -2,14 +2,19 @@ package org.lupenghan.eazydb.backend.DataManager.LogManager;
 
 import org.lupenghan.eazydb.backend.DataManager.LogManager.DataForm.RedoLogRecord;
 import org.lupenghan.eazydb.backend.DataManager.LogManager.DataForm.UndoLogRecord;
+import org.lupenghan.eazydb.backend.DataManager.PageManager.PageManager;
+import org.lupenghan.eazydb.backend.TransactionManager.TransactionManager;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.logging.Logger;
 
 public class LogManagerImpl implements LogManager {
 
