@@ -3,7 +3,7 @@ package org.lupenghan.eazydb.backend.DataManager.PageManager;
 import org.lupenghan.eazydb.backend.DataManager.PageManager.Dataform.PageID;
 
 /**
- * 页面管理器接口 - 提供页面操作的顶层接口
+ * 页面管理器接口扩展，增加pin/unpin方法
  */
 public interface PageManager {
     /**
@@ -37,6 +37,20 @@ public interface PageManager {
      * @return 操作是否成功
      */
     boolean freePage(PageID pageID);
+
+    /**
+     * 将页面固定在内存中
+     * @param pageID 页面ID
+     * @return 固定的页面，如果无法固定则返回null
+     */
+    Page pinPage(PageID pageID);
+
+    /**
+     * 解除页面的固定状态
+     * @param pageID 页面ID
+     * @param isDirty 是否标记为脏页
+     */
+    void unpinPage(PageID pageID, boolean isDirty);
 
     /**
      * 刷新所有脏页到磁盘

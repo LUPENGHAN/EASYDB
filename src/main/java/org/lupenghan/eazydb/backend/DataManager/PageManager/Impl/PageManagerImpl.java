@@ -27,6 +27,17 @@ public class PageManagerImpl implements PageManager {
         this.logManager = logManager;
         this.lock = new ReentrantLock();
     }
+    @Override
+    public Page pinPage(PageID pageID) {
+        // 直接使用缓冲池管理器的pinPage方法
+        return bufferPoolManager.pinPage(pageID);
+    }
+
+    @Override
+    public void unpinPage(PageID pageID, boolean isDirty) {
+        // 直接使用缓冲池管理器的unpinPage方法
+        bufferPoolManager.unpinPage(pageID, isDirty);
+    }
 
     @Override
     public byte[] read(PageID pageID, int offset, int length) {

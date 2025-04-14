@@ -1,5 +1,6 @@
 package org.lupenghan.eazydb.backend.DataManager.DataEntryManagement;
 
+import org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.Dataform.Record;
 import org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.Dataform.RecordID;
 
 import java.util.Iterator;
@@ -18,6 +19,6 @@ public interface RecordManager {
     // 获取记录
     byte[] getRecord(RecordID rid, long xid) throws Exception;
 
-    // 扫描记录（可选，用于范围查询）
-    Iterator<Record> scanRecords(Predicate predicate, long xid) throws Exception;
+    // 扫描记录（修改为具体的泛型类型）
+    Iterator<Record> scanRecords(Predicate<Record> predicate, long xid) throws Exception;
 }
