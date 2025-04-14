@@ -78,8 +78,7 @@ public class LogManagerImpl implements LogManager {
 
     @Override
     public long appendRedoLog(long xid, int pageID, short offset, byte[] oldData, byte[] newData) {
-        RedoLogRecord record = new RedoLogRecord();
-        // 设置属性...
+        RedoLogRecord record = new RedoLogRecord(xid, pageID, offset, oldData, newData);
         byte[] data = record.serialize();
         return appendLogInternal(LOG_TYPE_REDO, data);
     }
