@@ -1,10 +1,15 @@
 package org.lupenghan.eazydb.backend.DataManager.PageManager.Dataform;
 
+import lombok.Getter;
+
 /**
  * 页面标识符类，用于唯一标识数据库中的一个页面
  */
+@Getter
 public class PageID {
+
     private final int fileID;    // 文件ID，用于标识页面所在的文件
+
     private final int pageNum;   // 页面编号，标识文件中的页面序号
 
     /**
@@ -15,22 +20,6 @@ public class PageID {
     public PageID(int fileID, int pageNum) {
         this.fileID = fileID;
         this.pageNum = pageNum;
-    }
-
-    /**
-     * 获取文件ID
-     * @return 文件ID
-     */
-    public int getFileID() {
-        return fileID;
-    }
-
-    /**
-     * 获取页面编号
-     * @return 页面编号
-     */
-    public int getPageNum() {
-        return pageNum;
     }
 
     @Override

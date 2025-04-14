@@ -1,7 +1,9 @@
 package org.lupenghan.eazydb.backend.DataManager.LogManager.DataForm;
 
-import java.nio.ByteBuffer;
+import lombok.Getter;
 
+import java.nio.ByteBuffer;
+@Getter
 public class RedoLogRecord {
     private long xid;           // 事务ID
     private int pageID;         // 页面ID
@@ -23,26 +25,6 @@ public class RedoLogRecord {
         this.newData = newData != null ? newData : new byte[0];
     }
 
-    // Getters
-    public long getXid() {
-        return xid;
-    }
-
-    public int getPageID() {
-        return pageID;
-    }
-
-    public short getOffset() {
-        return offset;
-    }
-
-    public byte[] getOldData() {
-        return oldData;
-    }
-
-    public byte[] getNewData() {
-        return newData;
-    }
 
     // 序列化方法
     public byte[] serialize() {

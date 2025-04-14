@@ -1,7 +1,9 @@
 package org.lupenghan.eazydb.backend.DataManager.LogManager.DataForm;
 
-import java.nio.ByteBuffer;
+import lombok.Getter;
 
+import java.nio.ByteBuffer;
+@Getter
 public class UndoLogRecord {
     // 操作类型常量
     public static final int INSERT = 0;
@@ -21,18 +23,6 @@ public class UndoLogRecord {
         this.undoData = undoData;
     }
 
-    // Getters
-    public long getXid() {
-        return xid;
-    }
-
-    public int getOperationType() {
-        return operationType;
-    }
-
-    public byte[] getUndoData() {
-        return undoData;
-    }
 
     // 序列化方法
     public byte[] serialize() {
