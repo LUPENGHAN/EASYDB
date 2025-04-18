@@ -27,10 +27,15 @@ public class RecordHeader {
 
     // 头部字段
     private short length;     // 记录总长度（包括头部）
-
     private byte status;      // 记录状态
-
     private long xid;         // 事务ID
+    private long beginTS;            // 版本创建时间戳
+    private long endTS;              // 版本结束时间戳
+    private long prevVersionPointer; // 指向前一个版本的指针
+
+    // 特殊值
+    public static final long INFINITY_TS = Long.MAX_VALUE; // 表示"无穷大"时间戳
+    public static final long NULL_POINTER = -1;
 
     /**
      * 创建一个空的记录头部
@@ -39,6 +44,9 @@ public class RecordHeader {
         this.length = 0;
         this.status = VALID;
         this.xid = 0;
+        this.beginTS = 0;
+        this.endTS = INFINITY_TS;
+        this.prevVersionPointer = NULL_POINTER;
     }
 
     /**
@@ -46,11 +54,17 @@ public class RecordHeader {
      * @param length 记录总长度
      * @param status 记录状态
      * @param xid 事务ID
+     * @param beginTS 版本开始时间戳
+     * @param endTS 版本结束时间戳
+     * @param prevVersionPointer 前一版本指针
      */
-    public RecordHeader(short length, byte status, long xid) {
+    public RecordHeader(short length, byte status, long xid, long beginTS, long endTS, long prevVersionPointer) {
         this.length = length;
         this.status = status;
         this.xid = xid;
+        this.beginTS = beginTS;
+        this.endTS = endTS;
+        this.prevVersionPointer = prevVersionPointer;
     }
 
     /**
@@ -62,6 +76,9 @@ public class RecordHeader {
         buffer.putShort(length);
         buffer.put(status);
         buffer.putLong(xid);
+        buffer.putLong(beginTS);
+        buffer.putLong(endTS);
+        buffer.putLong(prevVersionPointer);
         return buffer.array();
     }
 
@@ -79,8 +96,11 @@ public class RecordHeader {
         short length = buffer.getShort();
         byte status = buffer.get();
         long xid = buffer.getLong();
+        long beginTS = buffer.getLong();
+        long endTS = buffer.getLong();
+        long prevVersionPointer = buffer.getLong();
 
-        return new RecordHeader(length, status, xid);
+        return new RecordHeader(length, status, xid, beginTS, endTS, prevVersionPointer);
     }
 
     /**
@@ -102,6 +122,11 @@ public class RecordHeader {
 
     @Override
     public String toString() {
-        return "RecordHeader{length=" + length + ", status=" + status + ", xid=" + xid + "}";
+        return "RecordHeader{length=" + length +
+                ", status=" + status +
+                ", xid=" + xid +
+                ", beginTS=" + beginTS +
+                ", endTS=" + endTS +
+                ", prevVersionPointer=" + prevVersionPointer + "}";
     }
 }
