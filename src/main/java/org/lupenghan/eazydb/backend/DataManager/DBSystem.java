@@ -2,7 +2,7 @@ package org.lupenghan.eazydb.backend.DataManager;
 
 import lombok.Getter;
 import org.lupenghan.eazydb.backend.DataManager.LogManager.LogManager;
-import org.lupenghan.eazydb.backend.DataManager.LogManager.LogManagerImpl;
+import org.lupenghan.eazydb.backend.DataManager.LogManager.Impl.LogManagerImpl;
 import org.lupenghan.eazydb.backend.DataManager.LogManager.RecoveryManager;
 import org.lupenghan.eazydb.backend.DataManager.PageManager.BufferPoolManager;
 import org.lupenghan.eazydb.backend.DataManager.PageManager.DiskManager;

@@ -1,5 +1,6 @@
 package org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.Impl;
 
+import lombok.Getter;
 import org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.Dataform.RecordHeader;
 import org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.Dataform.RecordID;
 import org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.Dataform.RecordVersion;
@@ -20,6 +21,7 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  */
 public class VersionStoreImpl implements VersionStore {
     // 页面管理器
+    @Getter
     private final PageManager pageManager;
 
     // 记录管理器
@@ -181,4 +183,5 @@ public class VersionStoreImpl implements VersionStore {
         // 这里仅作示例
         return null;
     }
+
 }

@@ -1,12 +1,9 @@
 package org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.Impl;
 
 import lombok.Getter;
+import org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.*;
 import org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.Dataform.*;
 import org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.Dataform.Record;
-import org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.MVCCRecordManager;
-import org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.RecordPage;
-import org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.TablespaceManager;
-import org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.VersionStore;
 import org.lupenghan.eazydb.backend.DataManager.LogManager.LogManager;
 import org.lupenghan.eazydb.backend.DataManager.PageManager.Dataform.PageID;
 import org.lupenghan.eazydb.backend.DataManager.PageManager.Page;
@@ -24,7 +21,7 @@ import java.util.function.Predicate;
 /**
  * 支持MVCC的记录管理器实现，整合了基本记录操作和MVCC操作
  */
-public class EnhancedRecordManagerImpl implements MVCCRecordManager {
+public class RecordManagerImpl implements RecordManager {
     private final PageManager pageManager;
     private final TransactionManager txManager;
     @Getter
@@ -42,7 +39,7 @@ public class EnhancedRecordManagerImpl implements MVCCRecordManager {
     /**
      * 创建增强记录管理器，支持MVCC
      */
-    public EnhancedRecordManagerImpl(PageManager pageManager, TransactionManager txManager,
+    public RecordManagerImpl(PageManager pageManager, TransactionManager txManager,
                                      LogManager logManager, TablespaceManager tablespaceManager,
                                      VersionStore versionStore, int tableID, boolean mvccEnabled) {
         this.pageManager = pageManager;
@@ -58,7 +55,7 @@ public class EnhancedRecordManagerImpl implements MVCCRecordManager {
     /**
      * 创建基本记录管理器，不使用MVCC
      */
-    public EnhancedRecordManagerImpl(PageManager pageManager, TransactionManager txManager,
+    public RecordManagerImpl(PageManager pageManager, TransactionManager txManager,
                                      LogManager logManager, TablespaceManager tablespaceManager,
                                      int tableID) {
         this(pageManager, txManager, logManager, tablespaceManager, null, tableID, false);

@@ -15,7 +15,7 @@ public class MVCCGarbageCollector {
     private static final long SAFETY_MARGIN = 60000; // 1分钟
 
     // MVCC记录管理器
-    private final MVCCRecordManager recordManager;
+    private final RecordManager recordManager;
 
     // 事务管理器
     private final TransactionManager txManager;
@@ -31,7 +31,7 @@ public class MVCCGarbageCollector {
      * @param recordManager MVCC记录管理器
      * @param txManager 事务管理器
      */
-    public MVCCGarbageCollector(MVCCRecordManager recordManager, TransactionManager txManager) {
+    public MVCCGarbageCollector(RecordManager recordManager, TransactionManager txManager) {
         this.recordManager = recordManager;
         this.txManager = txManager;
         this.executor = Executors.newSingleThreadScheduledExecutor();
