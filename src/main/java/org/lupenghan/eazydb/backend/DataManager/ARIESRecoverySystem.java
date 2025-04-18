@@ -20,7 +20,9 @@ public class ARIESRecoverySystem {
 
     @Getter
     private final LogManager logManager;
+    @Getter
     private final PageManager pageManager;
+    @Getter
     private final TransactionManager txManager;
 
     /**
