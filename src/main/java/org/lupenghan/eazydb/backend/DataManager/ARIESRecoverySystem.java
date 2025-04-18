@@ -1,10 +1,7 @@
 package org.lupenghan.eazydb.backend.DataManager;
 
 import lombok.Getter;
-import org.lupenghan.eazydb.backend.DataManager.LogManager.CheckpointManager;
-import org.lupenghan.eazydb.backend.DataManager.LogManager.EnhancedLogManagerImpl;
-import org.lupenghan.eazydb.backend.DataManager.LogManager.LogManager;
-import org.lupenghan.eazydb.backend.DataManager.LogManager.RecoveryManager;
+import org.lupenghan.eazydb.backend.DataManager.LogManager.*;
 import org.lupenghan.eazydb.backend.DataManager.PageManager.PageManager;
 import org.lupenghan.eazydb.backend.TransactionManager.TransactionManager;
 
@@ -38,8 +35,7 @@ public class ARIESRecoverySystem {
         this.txManager = txManager;
 
         // 创建增强版日志管理器
-        this.logManager = new EnhancedLogManagerImpl(dbPath, txManager, pageManager);
-
+        this.logManager = new LogManagerImpl(dbPath, txManager, pageManager);
         // 创建恢复管理器
         this.recoveryManager = new RecoveryManager(logManager, pageManager, txManager);
 

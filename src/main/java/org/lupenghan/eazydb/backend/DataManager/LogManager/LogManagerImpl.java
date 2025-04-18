@@ -2,6 +2,7 @@ package org.lupenghan.eazydb.backend.DataManager.LogManager;
 
 import org.lupenghan.eazydb.backend.DataManager.LogManager.DataForm.RedoLogRecord;
 import org.lupenghan.eazydb.backend.DataManager.LogManager.DataForm.UndoLogRecord;
+import org.lupenghan.eazydb.backend.DataManager.PageManager.Dataform.PageID;
 import org.lupenghan.eazydb.backend.DataManager.PageManager.PageManager;
 import org.lupenghan.eazydb.backend.TransactionManager.TransactionManager;
 
@@ -17,6 +18,7 @@ import java.util.concurrent.locks.ReentrantLock;
 import java.util.logging.Logger;
 
 public class LogManagerImpl implements LogManager {
+    private static final Logger LOGGER = Logger.getLogger(LogManagerImpl.class.getName());
 
     // 日志文件头部大小，用于存储元数据
     private static final int LOG_HEADER_SIZE = 16; // 增加了字段，所以扩大了头部
@@ -25,27 +27,51 @@ public class LogManagerImpl implements LogManager {
     private static final byte LOG_TYPE_REDO = 0;
     private static final byte LOG_TYPE_UNDO = 1;
     private static final byte LOG_TYPE_CHECKPOINT = 2;
+    private static final byte LOG_TYPE_COMPENSATION = 3;  // 补偿日志
+    private static final byte LOG_TYPE_END_CHECKPOINT = 4;  // 检查点结束
+    private static final byte LOG_TYPE_BEGIN_CHECKPOINT = 5;  // 检查点开始
 
     // 日志缓冲区大小
     private static final int LOG_BUFFER_SIZE = 4 * 1024 * 1024; // 4MB
 
     // 日志文件
-    private RandomAccessFile logFile;
-    private FileChannel fc;
+    protected RandomAccessFile logFile;
+    protected FileChannel fc;
 
     // 缓冲区
-    private ByteBuffer writeBuffer;
+    protected ByteBuffer writeBuffer;
 
     // 并发控制
-    private Lock lock;
+    protected Lock lock;
 
     // 当前日志位置
-    private long position;
+    protected long position;
 
     // 当前有效的检查点位置
-    private long checkpointPosition;
+    protected long checkpointPosition;
 
+    // 增强版功能所需的组件
+    protected CheckpointManager checkpointManager;
+    protected TransactionManager txManager;
+    protected PageManager pageManager;
+
+    // 基本构造函数，兼容原有代码
     public LogManagerImpl(String path) throws IOException {
+        initLogManager(path);
+    }
+
+    // 增强版构造函数，包含事务管理器和页面管理器
+    public LogManagerImpl(String path, TransactionManager txManager, PageManager pageManager) throws IOException {
+        initLogManager(path);
+        this.txManager = txManager;
+        this.pageManager = pageManager;
+        if (txManager != null) {
+            this.checkpointManager = new CheckpointManager(this, txManager);
+        }
+    }
+
+    // 初始化日志管理器的共用方法
+    private void initLogManager(String path) throws IOException {
         File file = new File(path + "/eazydb.log");
         boolean isNewFile = !file.exists();
 
@@ -95,7 +121,7 @@ public class LogManagerImpl implements LogManager {
         return appendLogInternal(LOG_TYPE_UNDO, data);
     }
 
-    private long appendLogInternal(byte logType, byte[] data) {
+    protected long appendLogInternal(byte logType, byte[] data) {
         lock.lock();
         try {
             // 日志记录格式: [type(1)][size(4)][data(N)]
@@ -177,7 +203,7 @@ public class LogManagerImpl implements LogManager {
     }
 
     // 读取指定位置的完整日志记录(包括类型和大小)
-    private byte[] readLogInternal(long position) {
+    protected byte[] readLogInternal(long position) {
         lock.lock();
         try {
             // 首先检查是否在缓冲区内
@@ -265,6 +291,17 @@ public class LogManagerImpl implements LogManager {
 
     @Override
     public void checkpoint() {
+        // 如果有CheckpointManager则使用增强版的检查点创建
+        if (checkpointManager != null && txManager != null && pageManager != null) {
+            createEnhancedCheckpoint();
+        } else {
+            // 否则使用基本版的检查点创建
+            createBasicCheckpoint();
+        }
+    }
+
+    // 基本版检查点创建
+    protected void createBasicCheckpoint() {
         lock.lock();
         try {
             // 首先确保所有缓冲区数据刷盘
@@ -302,29 +339,106 @@ public class LogManagerImpl implements LogManager {
         }
     }
 
+    // 增强版检查点创建
+    protected void createEnhancedCheckpoint() {
+        LOGGER.info("开始创建增强版检查点...");
+
+        try {
+            lock.lock();
+
+            try {
+                // 1. 首先刷新所有日志缓冲区内容到磁盘
+                flush();
+
+                // 2. 获取活跃事务和脏页信息
+                Map<Long, CheckpointManager.TransactionInfo> activeTransactions = getActiveTransactions();
+                Map<PageID, Long> dirtyPages = getDirtyPages();
+
+                // 3. 使用检查点管理器创建包含完整信息的检查点
+                checkpointManager.createCheckpoint(activeTransactions, dirtyPages);
+
+                // 4. 刷新所有页面到磁盘
+                pageManager.flushAll();
+
+                // 5. 更新检查点位置
+                // 这会由基本的checkpoint方法完成，所以我们调用它
+                createBasicCheckpoint();
+
+                LOGGER.info("增强版检查点创建完成");
+            } finally {
+                lock.unlock();
+            }
+        } catch (Exception e) {
+            LOGGER.severe("创建检查点失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 获取当前活跃事务
+     */
+    protected Map<Long, CheckpointManager.TransactionInfo> getActiveTransactions() {
+        // 演示用，实际实现应该从事务管理器获取
+        Map<Long, CheckpointManager.TransactionInfo> result = new ConcurrentHashMap<>();
+
+        // 假设事务ID从1到100，检查哪些是活跃的
+        for (long xid = 1; xid <= 100; xid++) {
+            if (txManager != null && txManager.isActive(xid)) {
+                CheckpointManager.TransactionInfo txInfo = new CheckpointManager.TransactionInfo();
+                txInfo.lastLSN = 0; // 在实际实现中，需要获取最后一条日志的LSN
+                result.put(xid, txInfo);
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * 获取当前脏页信息
+     */
+    protected Map<PageID, Long> getDirtyPages() {
+        // 演示用，实际实现应该从缓冲池管理器获取
+        Map<PageID, Long> result = new ConcurrentHashMap<>();
+
+        // 这里应该遍历所有脏页，但由于没有直接访问的方法，我们创建一个模拟实现
+
+        return result;
+    }
+
     @Override
     public void recover() {
         lock.lock();
         try {
-            // 恢复过程分为三个阶段：分析、重做、撤销
-
-            // 1. 分析阶段：扫描日志，确定哪些事务需要重做，哪些需要撤销
-            // 从检查点开始(如果有)，否则从头开始
-            long scanPos = checkpointPosition > 0 ? checkpointPosition : LOG_HEADER_SIZE;
-
-            // TODO: 实现分析阶段
-
-            // 2. 重做阶段：重做所有日志操作(包括已提交和未提交的)
-            // TODO: 实现重做阶段
-
-            // 3. 撤销阶段：撤销未提交事务的操作
-            // TODO: 实现撤销阶段
-
-            // 恢复完成后，创建一个新的检查点
-            checkpoint();
+            // 如果有RecoveryManager，应该使用它来执行恢复
+            if (txManager != null && pageManager != null) {
+                RecoveryManager recoveryManager = new RecoveryManager(this, pageManager, txManager);
+                recoveryManager.recover();
+            } else {
+                // 否则使用基本的恢复流程
+                recoverBasic();
+            }
         } finally {
             lock.unlock();
         }
+    }
+
+    // 基本恢复流程
+    protected void recoverBasic() {
+        // 恢复过程分为三个阶段：分析、重做、撤销
+
+        // 1. 分析阶段：扫描日志，确定哪些事务需要重做，哪些需要撤销
+        // 从检查点开始(如果有)，否则从头开始
+        long scanPos = checkpointPosition > 0 ? checkpointPosition : LOG_HEADER_SIZE;
+
+        // TODO: 实现分析阶段
+
+        // 2. 重做阶段：重做所有日志操作(包括已提交和未提交的)
+        // TODO: 实现重做阶段
+
+        // 3. 撤销阶段：撤销未提交事务的操作
+        // TODO: 实现撤销阶段
+
+        // 恢复完成后，创建一个新的检查点
+        checkpoint();
     }
 
     @Override
