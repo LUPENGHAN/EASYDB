@@ -1,5 +1,7 @@
 package org.lupenghan.eazydb.backend.TransactionManager;
 
+import org.lupenghan.eazydb.backend.TransactionManager.Impl.TransactionManagerImpl;
+
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -9,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class ConcurrencyControlManager {
     // 事务管理器
-    private final EnhancedTransactionManagerImpl txManager;
+    private final TransactionManager txManager;
 
     // 访问计数阈值，超过此阈值将切换为悲观控制
     private final int conflictThreshold = 5;
@@ -24,7 +26,7 @@ public class ConcurrencyControlManager {
      * 创建并发控制管理器
      * @param txManager 事务管理器
      */
-    public ConcurrencyControlManager(EnhancedTransactionManagerImpl txManager) {
+    public ConcurrencyControlManager(TransactionManagerImpl txManager) {
         this.txManager = txManager;
     }
 

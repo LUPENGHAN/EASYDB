@@ -1,6 +1,6 @@
 package org.lupenghan.eazydb.backend.DataManager.DataEntryManagement;
 
-import org.lupenghan.eazydb.backend.TransactionManager.MVCCTransactionManager;
+import org.lupenghan.eazydb.backend.TransactionManager.TransactionManager;
 
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -18,7 +18,7 @@ public class MVCCGarbageCollector {
     private final MVCCRecordManager recordManager;
 
     // 事务管理器
-    private final MVCCTransactionManager txManager;
+    private final TransactionManager txManager;
 
     // 调度执行器
     private final ScheduledExecutorService executor;
@@ -31,7 +31,7 @@ public class MVCCGarbageCollector {
      * @param recordManager MVCC记录管理器
      * @param txManager 事务管理器
      */
-    public MVCCGarbageCollector(MVCCRecordManager recordManager, MVCCTransactionManager txManager) {
+    public MVCCGarbageCollector(MVCCRecordManager recordManager, TransactionManager txManager) {
         this.recordManager = recordManager;
         this.txManager = txManager;
         this.executor = Executors.newSingleThreadScheduledExecutor();

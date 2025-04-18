@@ -1,9 +1,13 @@
-package org.lupenghan.eazydb.backend.TransactionManager;
+package org.lupenghan.eazydb.backend.TransactionManager.utils;
+
+import lombok.Getter;
 
 /**
  * 死锁异常
  */
+@Getter
 public class DeadlockException extends Exception {
+
     private final long victimXID;
 
     /**
@@ -16,11 +20,4 @@ public class DeadlockException extends Exception {
         this.victimXID = victimXID;
     }
 
-    /**
-     * 获取死锁受害者事务ID
-     * @return 事务ID
-     */
-    public long getVictimXID() {
-        return victimXID;
-    }
 }

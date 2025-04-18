@@ -1,53 +1,67 @@
 package org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.Impl;
 
-import org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.Dataform.RecordID;
-import org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.Dataform.RecordHeader;
+import lombok.Getter;
+import org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.Dataform.*;
 import org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.Dataform.Record;
-import org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.Dataform.SlottedPageImpl;
-import org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.RecordManager;
+import org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.MVCCRecordManager;
 import org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.RecordPage;
 import org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.TablespaceManager;
+import org.lupenghan.eazydb.backend.DataManager.DataEntryManagement.VersionStore;
 import org.lupenghan.eazydb.backend.DataManager.LogManager.LogManager;
 import org.lupenghan.eazydb.backend.DataManager.PageManager.Dataform.PageID;
 import org.lupenghan.eazydb.backend.DataManager.PageManager.Page;
 import org.lupenghan.eazydb.backend.DataManager.PageManager.PageManager;
 import org.lupenghan.eazydb.backend.TransactionManager.TransactionManager;
+import org.lupenghan.eazydb.backend.TransactionManager.utils.ReadView;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
-import java.util.function.Predicate;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.function.Predicate;
 
 /**
- * 记录管理器实现类
+ * 支持MVCC的记录管理器实现，整合了基本记录操作和MVCC操作
  */
-public class RecordManagerImpl implements RecordManager {
+public class EnhancedRecordManagerImpl implements MVCCRecordManager {
     private final PageManager pageManager;
     private final TransactionManager txManager;
+    @Getter
     private final LogManager logManager;
     private final TablespaceManager tablespaceManager;
-    private final int tableID;  // 当前表ID
+    private final int tableID;
     private final ReentrantLock lock;
 
+    // 版本存储
+    private final VersionStore versionStore;
+
+    // 标记是否启用MVCC
+    private final boolean mvccEnabled;
+
     /**
-     * 创建记录管理器
-     * @param pageManager 页面管理器
-     * @param txManager 事务管理器
-     * @param logManager 日志管理器
-     * @param tablespaceManager 表空间管理器
-     * @param tableID 表ID
+     * 创建增强记录管理器，支持MVCC
      */
-    public RecordManagerImpl(PageManager pageManager, TransactionManager txManager,
-                             LogManager logManager, TablespaceManager tablespaceManager,
-                             int tableID) {
+    public EnhancedRecordManagerImpl(PageManager pageManager, TransactionManager txManager,
+                                     LogManager logManager, TablespaceManager tablespaceManager,
+                                     VersionStore versionStore, int tableID, boolean mvccEnabled) {
         this.pageManager = pageManager;
         this.txManager = txManager;
         this.logManager = logManager;
         this.tablespaceManager = tablespaceManager;
+        this.versionStore = versionStore;
         this.tableID = tableID;
         this.lock = new ReentrantLock();
+        this.mvccEnabled = mvccEnabled;
+    }
+
+    /**
+     * 创建基本记录管理器，不使用MVCC
+     */
+    public EnhancedRecordManagerImpl(PageManager pageManager, TransactionManager txManager,
+                                     LogManager logManager, TablespaceManager tablespaceManager,
+                                     int tableID) {
+        this(pageManager, txManager, logManager, tablespaceManager, null, tableID, false);
     }
 
     @Override
@@ -90,7 +104,24 @@ public class RecordManagerImpl implements RecordManager {
                 int slotNum = recordPage.insertRecord(fullRecord);
 
                 // 返回记录ID
-                return new RecordID(pageID, slotNum);
+                RecordID rid = new RecordID(pageID, slotNum);
+
+                // 如果启用MVCC，创建初始版本
+                if (mvccEnabled && versionStore != null) {
+                    long beginTS = txManager.getBeginTimestamp(xid);
+                    RecordVersion initialVersion = new RecordVersion(
+                            rid,
+                            xid,
+                            beginTS,
+                            RecordHeader.INFINITY_TS,
+                            data,
+                            RecordHeader.VALID,
+                            RecordHeader.NULL_POINTER
+                    );
+                    versionStore.addVersion(initialVersion);
+                }
+
+                return rid;
             } finally {
                 pageManager.unpinPage(pageID, true); // 标记为脏页
             }
@@ -105,6 +136,13 @@ public class RecordManagerImpl implements RecordManager {
             throw new Exception("事务 " + xid + " 不是活动的");
         }
 
+        // 如果启用MVCC，创建删除标记版本
+        if (mvccEnabled && versionStore != null) {
+            long beginTS = txManager.getBeginTimestamp(xid);
+            return deleteRecordVersion(rid, xid, beginTS);
+        }
+
+        // 否则使用传统方式删除
         lock.lock();
         try {
             // 获取记录所在页面
@@ -163,6 +201,13 @@ public class RecordManagerImpl implements RecordManager {
             throw new IllegalArgumentException("记录数据不能为空");
         }
 
+        // 如果启用MVCC，创建新版本
+        if (mvccEnabled && versionStore != null) {
+            long beginTS = txManager.getBeginTimestamp(xid);
+            return updateRecordVersion(rid, newData, xid, beginTS);
+        }
+
+        // 否则使用传统方式更新
         lock.lock();
         try {
             // 获取记录所在页面
@@ -229,6 +274,14 @@ public class RecordManagerImpl implements RecordManager {
 
     @Override
     public byte[] getRecord(RecordID rid, long xid) throws Exception {
+        // 如果启用MVCC，使用MVCC可见性规则读取记录
+        if (mvccEnabled && versionStore != null) {
+            // 为当前事务创建ReadView
+            ReadView readView = txManager.createReadView(xid);
+            return getRecordWithMVCC(rid, readView);
+        }
+
+        // 否则使用传统方式读取
         lock.lock();
         try {
             // 获取记录所在页面
@@ -257,8 +310,7 @@ public class RecordManagerImpl implements RecordManager {
                     return null;
                 }
 
-                // MVCC检查：检查事务可见性
-                // (这里简化处理，实际实现需要考虑更复杂的MVCC规则)
+                // 简单的可见性检查：只能看到已提交事务的记录
                 if (!isVisible(header.getXid(), xid)) {
                     return null;
                 }
@@ -278,6 +330,72 @@ public class RecordManagerImpl implements RecordManager {
 
     @Override
     public Iterator<Record> scanRecords(Predicate<Record> predicate, long xid) throws Exception {
+        // 如果启用MVCC，使用MVCC可见性规则扫描
+        if (mvccEnabled && versionStore != null) {
+            // 获取当前事务的ReadView
+            ReadView readView = txManager.createReadView(xid);
+
+            // 创建结果列表
+            List<Record> visibleRecords = new ArrayList<>();
+
+            // 获取表的所有页面
+            List<PageID> tablePages = tablespaceManager.getTablePages(tableID);
+
+            // 遍历所有页面
+            for (PageID pageID : tablePages) {
+                Page page = pageManager.pinPage(pageID);
+                if (page == null) {
+                    continue;
+                }
+
+                try {
+                    // 创建槽式页面
+                    RecordPage recordPage = new SlottedPageImpl(page);
+
+                    // 获取所有有效槽
+                    Iterator<Integer> slots = recordPage.getValidSlots();
+
+                    while (slots.hasNext()) {
+                        int slotNum = slots.next();
+                        RecordID rid = new RecordID(pageID, slotNum);
+
+                        // 获取所有版本
+                        List<RecordVersion> versions = getAllVersions(rid);
+
+                        if (!versions.isEmpty()) {
+                            // 按MVCC可见性规则找到可见版本
+                            for (RecordVersion version : versions) {
+                                // 检查版本是否对当前事务可见
+                                if (readView.isVisible(version.getXid(), version.getBeginTS(), version.getEndTS())) {
+                                    // 创建可见记录
+                                    Record visibleRecord = new Record(
+                                            rid,
+                                            version.getData(),
+                                            version.getStatus(),
+                                            version.getBeginTS(),
+                                            version.getXid()
+                                    );
+
+                                    // 应用谓词过滤
+                                    if (predicate == null || predicate.test(visibleRecord)) {
+                                        visibleRecords.add(visibleRecord);
+                                    }
+
+                                    // 找到第一个可见版本后，不再处理该记录的其他版本
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                } finally {
+                    pageManager.unpinPage(pageID, false);
+                }
+            }
+
+            return visibleRecords.iterator();
+        }
+
+        // 否则使用传统方式扫描
         lock.lock();
         try {
             // 获取表的所有页面
@@ -316,7 +434,7 @@ public class RecordManagerImpl implements RecordManager {
                             continue;
                         }
 
-                        // MVCC检查：检查事务可见性
+                        // 检查可见性
                         if (!isVisible(header.getXid(), xid)) {
                             continue;
                         }
@@ -349,11 +467,152 @@ public class RecordManagerImpl implements RecordManager {
             lock.unlock();
         }
     }
+
+    // MVCC方法实现
+    @Override
+    public byte[] getRecordWithMVCC(RecordID rid, ReadView readView) throws Exception {
+        // 获取记录的所有版本
+        List<RecordVersion> versions = getAllVersions(rid);
+
+        if (versions.isEmpty()) {
+            return null;
+        }
+
+        // 按照MVCC可见性规则找到可见版本
+        for (RecordVersion version : versions) {
+            // 检查版本是否对当前事务可见
+            if (readView.isVisible(version.getXid(), version.getBeginTS(), version.getEndTS())) {
+                // 找到可见版本，返回数据
+                return version.getData();
+            }
+        }
+
+        // 没有找到可见版本
+        return null;
+    }
+
+    @Override
+    public List<RecordVersion> getAllVersions(RecordID rid) throws Exception {
+        if (!mvccEnabled || versionStore == null) {
+            // 如果未启用MVCC，返回空列表
+            return new ArrayList<>();
+        }
+        return versionStore.getVersionChain(rid);
+    }
+
+    @Override
+    public RecordVersion getRecordVersion(RecordID rid, long timestamp) throws Exception {
+        if (!mvccEnabled || versionStore == null) {
+            return null;
+        }
+
+        // 获取所有版本
+        List<RecordVersion> versions = getAllVersions(rid);
+
+        // 找到时间戳最接近的版本
+        for (RecordVersion version : versions) {
+            if (version.getBeginTS() <= timestamp && version.getEndTS() > timestamp) {
+                return version;
+            }
+        }
+
+        return null;
+    }
+
+    @Override
+    public boolean updateRecordVersion(RecordID rid, byte[] data, long xid, long beginTS) throws Exception {
+        if (!mvccEnabled || versionStore == null) {
+            // 如果未启用MVCC，使用传统方式更新
+            return updateRecord(rid, data, xid);
+        }
+
+        lock.lock();
+        try {
+            // 获取最新版本
+            RecordVersion latestVersion = versionStore.getLatestVersion(rid);
+
+            // 创建新版本
+            RecordVersion newVersion = new RecordVersion(
+                    rid,
+                    xid,
+                    beginTS,
+                    RecordHeader.INFINITY_TS,
+                    data,
+                    RecordHeader.VALID,
+                    latestVersion != null ? latestVersion.getRecordID().hashCode() : RecordHeader.NULL_POINTER
+            );
+
+            // 添加新版本
+            boolean success = versionStore.addVersion(newVersion);
+
+            // 如果有最新版本，更新其结束时间戳
+            if (success && latestVersion != null) {
+                versionStore.updateVersionEndTS(latestVersion.getRecordID().hashCode(), beginTS);
+            }
+
+            return success;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Override
+    public boolean deleteRecordVersion(RecordID rid, long xid, long beginTS) throws Exception {
+        if (!mvccEnabled || versionStore == null) {
+            // 如果未启用MVCC，使用传统方式删除
+            return deleteRecord(rid, xid);
+        }
+
+        lock.lock();
+        try {
+            // 获取最新版本
+            RecordVersion latestVersion = versionStore.getLatestVersion(rid);
+
+            if (latestVersion == null) {
+                return false;
+            }
+
+            // 创建删除标记版本
+            RecordVersion deleteVersion = new RecordVersion(
+                    rid,
+                    xid,
+                    beginTS,
+                    RecordHeader.INFINITY_TS,
+                    new byte[0], // 空数据
+                    RecordHeader.DELETED,
+                    latestVersion.getRecordID().hashCode()
+            );
+
+            // 添加删除版本
+            boolean success = versionStore.addVersion(deleteVersion);
+
+            // 更新最新版本的结束时间戳
+            if (success) {
+                versionStore.updateVersionEndTS(latestVersion.getRecordID().hashCode(), beginTS);
+            }
+
+            return success;
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    @Override
+    public int purgeOldVersions(long olderThan) throws Exception {
+        if (!mvccEnabled || versionStore == null) {
+            return 0;
+        }
+        return versionStore.purgeOldVersions(olderThan);
+    }
+
+// 辅助方法
+
     /**
      * 构建带头部的完整记录
-     * @param data 记录数据
+     *
+     * @param data   记录数据
      * @param status 记录状态
-     * @param xid 事务ID
+     * @param xid    事务ID
      * @return 完整记录字节数组
      */
     private byte[] buildRecordWithHeader(byte[] data, byte status, long xid) {
@@ -361,7 +620,8 @@ public class RecordManagerImpl implements RecordManager {
         short length = (short) (RecordHeader.HEADER_SIZE + data.length);
 
         // 创建记录头部
-        RecordHeader header = new RecordHeader(length, status, xid);
+        RecordHeader header = new RecordHeader(length, status, xid,
+                txManager.getBeginTimestamp(xid), RecordHeader.INFINITY_TS, RecordHeader.NULL_POINTER);
         byte[] headerBytes = header.serialize();
 
         // 构建完整记录
@@ -374,7 +634,8 @@ public class RecordManagerImpl implements RecordManager {
 
     /**
      * 检查记录是否对指定事务可见
-     * @param recordXid 记录的事务ID
+     *
+     * @param recordXid  记录的事务ID
      * @param currentXid 当前事务ID
      * @return 如果记录对当前事务可见则返回true
      */
@@ -389,29 +650,4 @@ public class RecordManagerImpl implements RecordManager {
         return txManager.isCommitted(recordXid);
     }
 
-    /**
-     * 获取页面
-     * @param pageID 页面ID
-     * @return 页面对象
-     */
-    private Page pinPage(PageID pageID) {
-        try {
-            return pageManager.pinPage(pageID);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    /**
-     * 释放页面
-     * @param pageID 页面ID
-     * @param isDirty 是否为脏页
-     */
-    private void unpinPage(PageID pageID, boolean isDirty) {
-        try {
-            pageManager.unpinPage(pageID, isDirty);
-        } catch (Exception e) {
-            // 忽略异常
-        }
-    }
 }

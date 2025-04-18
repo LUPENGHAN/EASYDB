@@ -1,8 +1,11 @@
-package org.lupenghan.eazydb.backend.TransactionManager;
+package org.lupenghan.eazydb.backend.TransactionManager.utils;
+
+import lombok.Getter;
 
 /**
  * 事务隔离级别
  */
+@Getter
 public enum IsolationLevel {
     /**
      * 读未提交 - 允许脏读、不可重复读和幻读
@@ -28,10 +31,6 @@ public enum IsolationLevel {
 
     IsolationLevel(int value) {
         this.value = value;
-    }
-
-    public int getValue() {
-        return value;
     }
 
     /**

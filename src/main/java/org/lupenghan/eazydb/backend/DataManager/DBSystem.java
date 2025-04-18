@@ -1,7 +1,9 @@
 package org.lupenghan.eazydb.backend.DataManager;
 
+import lombok.Getter;
 import org.lupenghan.eazydb.backend.DataManager.LogManager.LogManager;
 import org.lupenghan.eazydb.backend.DataManager.LogManager.LogManagerImpl;
+import org.lupenghan.eazydb.backend.DataManager.LogManager.RecoveryManager;
 import org.lupenghan.eazydb.backend.DataManager.PageManager.BufferPoolManager;
 import org.lupenghan.eazydb.backend.DataManager.PageManager.DiskManager;
 import org.lupenghan.eazydb.backend.DataManager.PageManager.Impl.BufferPoolManagerImpl;
@@ -9,7 +11,8 @@ import org.lupenghan.eazydb.backend.DataManager.PageManager.Impl.DiskManagerImpl
 import org.lupenghan.eazydb.backend.DataManager.PageManager.Impl.PageManagerImpl;
 import org.lupenghan.eazydb.backend.DataManager.PageManager.PageManager;
 import org.lupenghan.eazydb.backend.TransactionManager.TransactionManager;
-import org.lupenghan.eazydb.backend.TransactionManager.TransactionManagerImpl;
+import org.lupenghan.eazydb.backend.TransactionManager.Impl.TransactionManagerImpl;
+
 
 import java.util.logging.Logger;
 
@@ -25,34 +28,48 @@ public class DBSystem {
 
     private final TransactionManager tm;
     private final LogManager lm;
+
+    @Getter
     private final PageManager pageManager;
-    private final ARIESRecoverySystem recoverySystem;
+
+    @Getter
+    private final RecoveryManager recoveryManager;
+
+    @Getter
+    private final DiskManager diskManager;
+    @Getter
     private final String path;
+
+    // 是否启用MVCC
+    @Getter
+    private final boolean mvccEnabled;
 
     /**
      * 创建数据库系统实例
      * @param path 数据库路径
+     * @param mvccEnabled 是否启用MVCC
      * @throws Exception 如果创建失败
      */
-    public DBSystem(String path) throws Exception {
+    public DBSystem(String path, boolean mvccEnabled) throws Exception {
         this.path = path;
+        this.mvccEnabled = mvccEnabled;
 
         // 创建事务管理器
         this.tm = new TransactionManagerImpl(path);
 
         // 创建磁盘管理器和缓冲池管理器
-        DiskManager diskManager = new DiskManagerImpl(path);
+        this.diskManager = new DiskManagerImpl(path);
         BufferPoolManager bufferPoolManager = new BufferPoolManagerImpl(DEFAULT_BUFFER_POOL_SIZE, diskManager);
 
         // 创建页面管理器（初始时没有日志管理器）
         PageManagerImpl pageManagerImpl = new PageManagerImpl(bufferPoolManager, null);
         this.pageManager = pageManagerImpl;
 
-        // 创建ARIES恢复系统（包含日志管理器）
-        this.recoverySystem = new ARIESRecoverySystem(path, pageManager, tm);
+        // 创建日志管理器
+        this.lm = new LogManagerImpl(path, tm, pageManager);
 
-        // 获取日志管理器
-        this.lm = recoverySystem.getLogManager();
+        // 创建恢复管理器
+        this.recoveryManager = new RecoveryManager(lm, pageManager, tm);
 
         // 将日志管理器关联到页面管理器（解决循环依赖）
         pageManagerImpl.setLogManager(lm);
@@ -64,10 +81,19 @@ public class DBSystem {
     }
 
     /**
+     * 使用默认配置创建数据库系统，不启用MVCC
+     * @param path 数据库路径
+     * @throws Exception 如果创建失败
+     */
+    public DBSystem(String path) throws Exception {
+        this(path, false);
+    }
+
+    /**
      * 执行数据库恢复
      */
     private void recover() {
-        recoverySystem.recover();
+        recoveryManager.recover();
     }
 
     /**
@@ -83,8 +109,6 @@ public class DBSystem {
      * @param xid 事务ID
      */
     public void commit(long xid) {
-        // 1. 记录提交日志
-        // 2. 执行实际的提交
         tm.commit(xid);
     }
 
@@ -93,8 +117,6 @@ public class DBSystem {
      * @param xid 事务ID
      */
     public void abort(long xid) {
-        // 1. 记录中止日志
-        // 2. 执行实际的中止
         tm.abort(xid);
     }
 
@@ -102,7 +124,6 @@ public class DBSystem {
      * 创建检查点
      */
     public void checkpoint() {
-        // 创建检查点
         lm.checkpoint();
     }
 
@@ -119,6 +140,12 @@ public class DBSystem {
         lm.close();
         pageManager.close();
         tm.close();
+
+        try {
+            diskManager.close();
+        } catch (Exception e) {
+            LOGGER.severe("关闭磁盘管理器失败: " + e.getMessage());
+        }
 
         LOGGER.info("数据库系统已关闭");
     }
@@ -139,19 +166,4 @@ public class DBSystem {
         return lm;
     }
 
-    /**
-     * 获取页面管理器
-     * @return 页面管理器
-     */
-    public PageManager getPageManager() {
-        return pageManager;
-    }
-
-    /**
-     * 获取恢复系统
-     * @return 恢复系统
-     */
-    public ARIESRecoverySystem getRecoverySystem() {
-        return recoverySystem;
-    }
 }

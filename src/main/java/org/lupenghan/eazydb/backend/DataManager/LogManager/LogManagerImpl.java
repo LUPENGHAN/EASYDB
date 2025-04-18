@@ -1,11 +1,9 @@
 package org.lupenghan.eazydb.backend.DataManager.LogManager;
 
-import org.lupenghan.eazydb.backend.DataManager.LogManager.DataForm.RedoLogRecord;
-import org.lupenghan.eazydb.backend.DataManager.LogManager.DataForm.UndoLogRecord;
 import org.lupenghan.eazydb.backend.DataManager.PageManager.Dataform.PageID;
 import org.lupenghan.eazydb.backend.DataManager.PageManager.PageManager;
 import org.lupenghan.eazydb.backend.TransactionManager.TransactionManager;
-
+import org.lupenghan.eazydb.backend.DataManager.LogManager.DataForm.LogRecord;
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -109,14 +107,14 @@ public class LogManagerImpl implements LogManager {
 
     @Override
     public long appendRedoLog(long xid, int pageID, short offset, byte[] oldData, byte[] newData) {
-        RedoLogRecord record = new RedoLogRecord(xid, pageID, offset, oldData, newData);
+        LogRecord record = LogRecord.createRedoLog(xid, pageID, offset, oldData, newData);
         byte[] data = record.serialize();
         return appendLogInternal(LOG_TYPE_REDO, data);
     }
 
     @Override
     public long appendUndoLog(long xid, int operationType, byte[] undoData) {
-        UndoLogRecord record = new UndoLogRecord(xid, operationType, undoData);
+        LogRecord record = LogRecord.createUndoLog(xid, operationType, undoData);
         byte[] data = record.serialize();
         return appendLogInternal(LOG_TYPE_UNDO, data);
     }

@@ -1,7 +1,6 @@
 package org.lupenghan.eazydb.backend.DataManager.LogManager;
 
-import org.lupenghan.eazydb.backend.DataManager.LogManager.DataForm.RedoLogRecord;
-import org.lupenghan.eazydb.backend.DataManager.LogManager.DataForm.UndoLogRecord;
+import org.lupenghan.eazydb.backend.DataManager.LogManager.DataForm.LogRecord;
 import org.lupenghan.eazydb.backend.DataManager.PageManager.Dataform.PageID;
 import org.lupenghan.eazydb.backend.DataManager.PageManager.Page;
 import org.lupenghan.eazydb.backend.DataManager.PageManager.PageManager;
@@ -24,9 +23,9 @@ public class RecoveryManager {
     private static final byte LOG_TYPE_BEGIN_CHECKPOINT = 5;  // 检查点开始
 
     // 操作类型常量
-    private static final int UNDO_INSERT = UndoLogRecord.INSERT;
-    private static final int UNDO_DELETE = UndoLogRecord.DELETE;
-    private static final int UNDO_UPDATE = UndoLogRecord.UPDATE;
+    private static final int UNDO_INSERT = LogRecord.UNDO_INSERT;
+    private static final int UNDO_DELETE = LogRecord.UNDO_DELETE;
+    private static final int UNDO_UPDATE = LogRecord.UNDO_UPDATE;
 
     /**
      * 事务信息内部类，用于恢复过程中跟踪事务状态
@@ -117,17 +116,16 @@ public class RecoveryManager {
             // 判断日志类型
             if (iterator.isRedo()) {
                 // 处理REDO日志
-                RedoLogRecord redoRecord = RedoLogRecord.deserialize(logData);
-                long xid = redoRecord.getXid();
+                LogRecord record = LogRecord.deserialize(LogRecord.TYPE_REDO, logData);
+                long xid = record.getXid();
 
                 // 更新事务表
                 TransactionInfo txInfo = activeTransactions.computeIfAbsent(xid, k -> new TransactionInfo());
                 txInfo.lastLSN = lsn;
 
                 // 更新脏页表（仅当该页面未在脏页表中时添加）
-                PageID pageID = new PageID(-1, redoRecord.getPageID()); // 假设使用页号作为唯一标识
+                PageID pageID = new PageID(-1, record.getPageID()); // 假设使用页号作为唯一标识
                 dirtyPages.putIfAbsent(pageID, lsn);
-
             } else {
                 // 处理UNDO或其他类型日志
                 ByteBuffer buffer = ByteBuffer.wrap(logData);
@@ -142,15 +140,15 @@ public class RecoveryManager {
                     checkpointDirtyPages = readDirtyPagesFromCheckpoint(logData);
                 } else {
                     // 假设是UndoLog或其他类型
-                    UndoLogRecord undoRecord = UndoLogRecord.deserialize(logData);
-                    long xid = undoRecord.getXid();
+                    LogRecord record = LogRecord.deserialize(LogRecord.TYPE_UNDO, logData);
+                    long xid = record.getXid();
 
                     // 更新事务表
                     TransactionInfo txInfo = activeTransactions.computeIfAbsent(xid, k -> new TransactionInfo());
                     txInfo.lastLSN = lsn;
 
                     // 根据操作类型判断
-                    int opType = undoRecord.getOperationType();
+                    int opType = record.getOperationType();
                     if (opType == -1) { // 假设-1表示事务提交
                         txInfo.committed = true;
                     } else if (opType == -2) { // 假设-2表示事务中止
@@ -294,6 +292,7 @@ public class RecoveryManager {
      * 重做阶段 - 从日志重放修改操作
      */
     private void redoPhase() {
+
         // 设置重做起点（脏页表中最小的RecLSN）
         long redoStartLSN = Long.MAX_VALUE;
         for (long recLSN : dirtyPages.values()) {
@@ -328,7 +327,7 @@ public class RecoveryManager {
             }
 
             // 解析REDO日志
-            RedoLogRecord record = RedoLogRecord.deserialize(logData);
+            LogRecord record = LogRecord.deserialize(LogRecord.TYPE_REDO, logData);
             int pageNum = record.getPageID();
             PageID pageID = new PageID(-1, pageNum); // 假设使用页号作为唯一标识
 
@@ -401,10 +400,12 @@ public class RecoveryManager {
                 continue;
             }
 
-            UndoLogRecord record = UndoLogRecord.deserialize(logData);
+            LogRecord record = LogRecord.deserialize(LogRecord.TYPE_UNDO, logData);
 
             // 执行UNDO操作
-            LOGGER.info("撤销操作 XID=" + xid + " LSN=" + lsn + " 操作类型=" + record.getOperationType());
+            if (record != null) {
+                LOGGER.info("撤销操作 XID=" + xid + " LSN=" + lsn + " 操作类型=" + record.getOperationType());
+            }
             undoOperation(record);
 
             // 写入补偿日志（CLR）
@@ -449,25 +450,24 @@ public class RecoveryManager {
     /**
      * 执行UNDO操作
      */
-    private void undoOperation(UndoLogRecord record) {
+    private void undoOperation(LogRecord record) {
         int opType = record.getOperationType();
         byte[] undoData = record.getUndoData();
 
         switch (opType) {
-            case UNDO_INSERT:
+            case LogRecord.UNDO_INSERT:
                 undoInsert(undoData);
                 break;
-            case UNDO_DELETE:
+            case LogRecord.UNDO_DELETE:
                 undoDelete(undoData);
                 break;
-            case UNDO_UPDATE:
+            case LogRecord.UNDO_UPDATE:
                 undoUpdate(undoData);
                 break;
             default:
                 LOGGER.warning("未知的操作类型: " + opType);
         }
     }
-
     /**
      * 撤销插入操作
      */

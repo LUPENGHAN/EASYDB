@@ -1,6 +1,8 @@
-package org.lupenghan.eazydb.backend.TransactionManager;
+package org.lupenghan.eazydb.backend.TransactionManager.Impl;
 
 import lombok.Getter;
+import org.lupenghan.eazydb.backend.TransactionManager.utils.DeadlockException;
+import org.lupenghan.eazydb.backend.TransactionManager.LockManager;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;

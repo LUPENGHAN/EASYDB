@@ -1,5 +1,7 @@
 package org.lupenghan.eazydb.backend.TransactionManager;
 
+import org.lupenghan.eazydb.backend.TransactionManager.utils.DeadlockException;
+
 /**
  * 锁管理器接口
  * 负责管理事务的锁请求、授予和释放
