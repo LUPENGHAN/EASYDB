@@ -6,7 +6,10 @@ import org.lupenghan.eazydb.page.models.FreeSpaceEntry;
 import org.lupenghan.eazydb.page.models.Page;
 import org.lupenghan.eazydb.page.models.PageHead;
 import org.lupenghan.eazydb.page.models.SlotDirectoryEntry;
+import org.lupenghan.eazydb.record.Impl.RecordManagerImpl;
 import org.lupenghan.eazydb.record.models.Record;
+import org.lupenghan.eazydb.record.models.RecordStatus;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -36,6 +39,9 @@ public class PageManagerImpl implements PageManager {
         this.pageCache = new HashMap<>();
         this.nextPageId = new AtomicInteger(0);
     }
+
+
+
     @Override
     public Page createPage() {
         int pageId = nextPageId.incrementAndGet();
@@ -99,12 +105,7 @@ public class PageManagerImpl implements PageManager {
         page.updateLastAccessTime();
     }
 
-    @Override
-    public int getFreeSpace(Page page) {
-        return page.getFreeSpaceDirectory().stream()
-                .mapToInt(FreeSpaceEntry::getLength)
-                .sum();
-        }
+
     //压缩页面并未实现
     @Override
     public void compactPage(Page page) {
@@ -114,11 +115,13 @@ public class PageManagerImpl implements PageManager {
     @Override
     public boolean needsCompaction(Page page) {
         // 如果碎片化程度超过50%，则需要压缩
-        int totalFreeSpace = page.getFreeSpaceDirectory().stream()
-                .mapToInt(FreeSpaceEntry::getLength)
-                .sum();
-        return totalFreeSpace > 0 &&
-                (double)totalFreeSpace / (page.getRecords().size() * 100) > 0.5;    }
+//        int totalFreeSpace = page.getFreeSpaceDirectory().stream()
+//                .mapToInt(FreeSpaceEntry::getLength)
+//                .sum();
+//        return totalFreeSpace > 0 &&
+//                (double)totalFreeSpace / (page.getRecords().size() * 100) > 0.5;
+        return false;
+    }
 
     private Page parsePageData(int pageId, byte[] pageData) {
         ByteBuffer buffer = ByteBuffer.wrap(pageData);
@@ -132,40 +135,29 @@ public class PageManagerImpl implements PageManager {
         header.setFileOffset(buffer.getLong());
         header.setPageLSN(buffer.getLong());
         header.setPageType(buffer.get());
-        header.setPrevPageId(buffer.getInt());
-        header.setNextPageId(buffer.getInt());
-        header.setFreeSpaceDirCount(buffer.getInt());
-        header.setFreeSpacePointer(buffer.getInt());
+
+        header.setFreeSpacePointer(buffer.getShort());
         header.setSlotCount(buffer.getInt());
         header.setRecordCount(buffer.getInt());
         header.setChecksum(buffer.getInt());
         header.setVersion(buffer.getLong());
         header.setCreateTime(buffer.getLong());
         header.setLastModifiedTime(buffer.getLong());
-
+        header.setLeaf(buffer.get()==1);
+        header.setKeyCount(buffer.getInt());
         // 解析槽位目录
         int slotCount = header.getSlotCount();
         List<SlotDirectoryEntry> slotDirectory = new ArrayList<>(slotCount);
         for (int i = 0; i < slotCount; i++) {
             SlotDirectoryEntry entry = new SlotDirectoryEntry();
-            entry.setOffset(buffer.getShort());
+            entry.setOffset(buffer.getInt());
             entry.setInUse(buffer.get() == 1);
-            entry.setRecordVersion(buffer.getLong());
-            entry.setPageId(buffer.getInt());
-            entry.setSlotId(buffer.getInt());
+            entry.setReserved1(buffer.get());
+            entry.setReserved2(buffer.getShort());
             slotDirectory.add(entry);
         }
         page.setSlotDirectory(slotDirectory);
 
-        // 解析空闲空间目录
-        int freeSpaceDirCount = header.getFreeSpaceDirCount();
-        List<FreeSpaceEntry> freeSpaceDirectory = new ArrayList<>(freeSpaceDirCount);
-        for (int i = 0; i < freeSpaceDirCount; i++) {
-            int offset = buffer.getInt();
-            int length = buffer.getInt();
-            freeSpaceDirectory.add(new FreeSpaceEntry(offset, length));
-        }
-        page.setFreeSpaceDirectory(freeSpaceDirectory);
 
         // 解析记录
         int recordCount = header.getRecordCount();
@@ -178,23 +170,26 @@ public class PageManagerImpl implements PageManager {
             record.setBeginTS(buffer.getLong());
             record.setEndTS(buffer.getLong());
             record.setPrevVersionPointer(buffer.getLong());
+            record.setPageId(buffer.getInt());
+            record.setSlotId(buffer.getInt());
 
-            // 读取null位图
-            int nullBitmapLength = (recordCount + 7) / 8;
-            byte[] nullBitmap = new byte[nullBitmapLength];
-            buffer.get(nullBitmap);
-            record.setNullBitmap(nullBitmap);
-
-            // 读取字段偏移
-            int fieldCount = buffer.getShort();
-            short[] fieldOffsets = new short[fieldCount];
-            for (int j = 0; j < fieldCount; j++) {
-                fieldOffsets[j] = buffer.getShort();
-            }
-            record.setFieldOffsets(fieldOffsets);
-
+//            // 读取null位图
+//            int nullBitmapLength = (recordCount + 7) / 8;
+//            byte[] nullBitmap = new byte[nullBitmapLength];
+//            buffer.get(nullBitmap);
+//            record.setNullBitmap(nullBitmap);
+//
+//            // 读取字段偏移
+//            int fieldCount = buffer.getShort();
+//            short[] fieldOffsets = new short[fieldCount];
+//            for (int j = 0; j < fieldCount; j++) {
+//                fieldOffsets[j] = buffer.getShort();
+//            }
+//            record.setFieldOffsets(fieldOffsets);
+            record.setNullBitmap(new byte[]{buffer.get()});
+            record.setFieldOffsets(new short[]{buffer.getShort()});
             // 读取记录数据
-            byte[] data = new byte[record.getLength()];
+            byte[] data = new byte[record.getLength()- 45];
             buffer.get(data);
             record.setData(data);
 
@@ -245,60 +240,59 @@ public class PageManagerImpl implements PageManager {
         buffer.putLong(header.getFileOffset());
         buffer.putLong(header.getPageLSN());
         buffer.put(header.getPageType());
-        buffer.putInt(header.getPrevPageId());
-        buffer.putInt(header.getNextPageId());
-        buffer.putInt(header.getFreeSpaceDirCount());
-        buffer.putInt(header.getFreeSpacePointer());
+        buffer.putShort(header.getFreeSpacePointer());
         buffer.putInt(header.getSlotCount());
         buffer.putInt(header.getRecordCount());
         buffer.putInt(header.getChecksum());
         buffer.putLong(header.getVersion());
         buffer.putLong(header.getCreateTime());
         buffer.putLong(header.getLastModifiedTime());
-
+        buffer.put((byte) (header.isLeaf() ? 1 : 0));
+        buffer.putInt(header.getKeyCount());
         // 序列化槽位目录
         for (SlotDirectoryEntry entry : page.getSlotDirectory()) {
-            buffer.putShort(entry.getOffset());
+            buffer.putInt( entry.getOffset());
             buffer.put((byte)(entry.isInUse() ? 1 : 0));
-            buffer.putLong(entry.getRecordVersion());
-            buffer.putInt(entry.getPageId());
-            buffer.putInt(entry.getSlotId());
+            buffer.put( entry.getReserved1());
+            buffer.putShort(entry.getReserved2());
+
         }
 
-        // 序列化空闲空间目录
-        for (FreeSpaceEntry entry : page.getFreeSpaceDirectory()) {
-            buffer.putInt(entry.getOffset());
-            buffer.putInt(entry.getLength());
-        }
 
         // 序列化记录
         for (Record record : page.getRecords()) {
-            buffer.putShort(record.getLength());
+            buffer.putInt(record.getLength());
             buffer.put(record.getStatus());
             buffer.putLong(record.getXid());
             buffer.putLong(record.getBeginTS());
             buffer.putLong(record.getEndTS());
             buffer.putLong(record.getPrevVersionPointer());
+            buffer.putInt(record.getPageId());
+            buffer.putInt(record.getSlotId());
 
-            // 写入null位图（确保不为null）
-            byte[] nullBitmap = record.getNullBitmap();
-            if (nullBitmap == null) {
-                // 如果nullBitmap为null，创建一个空位图（全为0，表示没有NULL值）
-                int nullBitmapLength = (page.getRecords().size() + 7) / 8;
-                nullBitmap = new byte[nullBitmapLength > 0 ? nullBitmapLength : 1];
-            }
-            buffer.put(nullBitmap);
-
-            // 写入字段偏移（确保不为null）
-            short[] fieldOffsets = record.getFieldOffsets();
-            if (fieldOffsets == null) {
-                fieldOffsets = new short[0];
-            }
-            buffer.putShort((short)fieldOffsets.length);
-            for (short offset : fieldOffsets) {
-                buffer.putShort(offset);
-            }
-
+//            // 写入null位图（确保不为null）
+//            byte[] nullBitmap = record.getNullBitmap();
+//            if (nullBitmap == null) {
+//                // 如果nullBitmap为null，创建一个空位图（全为0，表示没有NULL值）
+//                int nullBitmapLength = (page.getRecords().size() + 7) / 8;
+//                nullBitmap = new byte[nullBitmapLength > 0 ? nullBitmapLength : 1];
+//            }
+//            buffer.put(nullBitmap);
+//
+//            // 写入字段偏移（确保不为null）
+//            short[] fieldOffsets = record.getFieldOffsets();
+//            if (fieldOffsets == null) {
+//                fieldOffsets = new short[0];
+//            }
+//            buffer.putShort((short)fieldOffsets.length);
+//            for (short offset : fieldOffsets) {
+//                buffer.putShort(offset);
+//            }
+            //暂时简化
+            byte[] nullBitmap = new byte[1];
+            short[] fieldOffsets = new short[] {0};
+            buffer.put((byte) 1);
+            buffer.putShort((short) 0);
             // 写入记录数据（确保不为null）
             byte[] data = record.getData();
             if (data == null) {

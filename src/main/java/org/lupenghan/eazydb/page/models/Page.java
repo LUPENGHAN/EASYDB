@@ -10,6 +10,10 @@ import java.util.List;
 @Builder
 @Data
 public class Page {
+    private static final int PAGE_SIZE = 4096; // 4KB页面大小
+    private static final int PAGE_HEADER_SIZE = 64; // 你 PageHead 占用的总字节数
+    private static final int SLOT_ENTRY_SIZE = 24;  // 每个 SlotDirectoryEntry 占用的大小
+    private int nextFreeOffsetFromEnd = PAGE_SIZE;// 初始从页尾开始分配
     // B+树索引相关字段
     private List<Object> keys;      // 键列表
     private List<Page> children;    // 子页面列表
@@ -18,7 +22,6 @@ public class Page {
     // 页内主要结构
     private PageHead header;
     private List<SlotDirectoryEntry> slotDirectory;
-    private List<FreeSpaceEntry> freeSpaceDirectory;
     private byte[] freeSpace; // 用于表示空闲区域，也可抽象为 FreeSpaceManager
 
     // 页面状态
@@ -32,7 +35,6 @@ public class Page {
                 .createTime(System.currentTimeMillis())
                 .lastModifiedTime(System.currentTimeMillis())
                 .pageType(PageType.DATA.getValue())
-                .freeSpaceDirCount(0)
                 .slotCount(0)
                 .recordCount(0)
                 .isLeaf(true)
@@ -40,7 +42,6 @@ public class Page {
                 .build();
 
         this.slotDirectory = new ArrayList<>();
-        this.freeSpaceDirectory = new ArrayList<>();
         this.freeSpace = new byte[0];
         this.keys = new ArrayList<>();
         this.children = new ArrayList<>();
@@ -64,18 +65,15 @@ public class Page {
     public void updateLastAccessTime() {
         lastAccessTime = System.currentTimeMillis();
     }
-
-    /**
-     * 添加空闲空间项
-     */
-    public void addFreeSpaceEntry(int offset, int length) {
-        freeSpaceDirectory.add(FreeSpaceEntry.builder()
-                .offset(offset)
-                .length(length)
-                .build());
-        header.setFreeSpaceDirCount(header.getFreeSpaceDirCount() + 1);
-        isDirty = true;
+    public int allocateRecordSpace(int size) {
+        int slotEnd =  PAGE_HEADER_SIZE + (getSlotDirectory().size() * SLOT_ENTRY_SIZE);
+        if (nextFreeOffsetFromEnd - size < slotEnd) {
+            return -1; // 空间不足
+        }
+        nextFreeOffsetFromEnd -= size;
+        return nextFreeOffsetFromEnd;
     }
+
 
     /**
      * 添加槽位目录项

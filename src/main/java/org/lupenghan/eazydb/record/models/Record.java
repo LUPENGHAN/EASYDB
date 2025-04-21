@@ -7,8 +7,9 @@ import java.util.Map;
 
 @Data
 public class Record {
-    short length;              // 记录长度
-    byte status;              // 0: 有效, 1: 删除, 2: 已更新
+    int length;              // 记录长度
+
+    byte status;       // 0: 有效, 1: 删除, 2: 已更新
 
     long xid;                 // 所属事务 ID
 
@@ -28,4 +29,5 @@ public class Record {
 
     //用于B+树
     private Map<String, Object> fields = new HashMap<>();
+
 }
