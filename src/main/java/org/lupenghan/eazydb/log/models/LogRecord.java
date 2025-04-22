@@ -1,134 +1,85 @@
 package org.lupenghan.eazydb.log.models;
 
-
 import lombok.Data;
-import lombok.NoArgsConstructor;
 
 import java.nio.ByteBuffer;
 
+/**
+ * 日志记录 (LogRecord) 类，表示一条WAL日志记录，支持序列化和反序列化。
+ */
 @Data
-@NoArgsConstructor
 public class LogRecord {
-    public static final byte TYPE_REDO = 0;
-    public static final byte TYPE_UNDO = 1;
-    public static final byte TYPE_CHECKPOINT = 2;
-    public static final byte TYPE_COMPENSATION = 3;
-    public static final byte TYPE_END_CHECKPOINT = 4;
-    public static final byte TYPE_BEGIN_CHECKPOINT = 5;
+    // 日志记录序列号 (Log Sequence Number)
+    private long lsn;
+    // 日志类型 (用于区分不同类型的日志记录)
+    private int type;
+    // 日志的具体数据内容
+    private byte[] data;
 
-    public static final int UNDO_INSERT = 0;
-    public static final int UNDO_DELETE = 1;
-    public static final int UNDO_UPDATE = 2;
-
-    private byte logType;
-    private long xid;
-    private long logRecordLength;
-
-    private int pageID;
-    private short offset;
-    private byte[] oldData = new byte[0];
-    private byte[] newData = new byte[0];
-
-    private int operationType;
-    private byte[] undoData = new byte[0];
-
-
-    public static LogRecord createRedoLog(long xid, int pageID, short offset, byte[] newData) {
-        LogRecord log = new LogRecord();
-        log.logType = TYPE_REDO;
-        log.xid = xid;
-        log.pageID = pageID;
-        log.offset = offset;
-        log.newData = newData != null ? newData : new byte[0];
-        log.logRecordLength = 8 + 4 + 2 + 4 + log.newData.length;
-        return log;
+    // 构造函数：用于创建一个新的日志记录（LSN 在 append 时由 LogManager 分配）
+    public LogRecord(int type, byte[] data) {
+        this.lsn = -1; // 尚未分配LSN
+        this.type = type;
+        // 存储数据的副本以防止外部修改
+        this.data = (data != null ? data.clone() : new byte[0]);
     }
 
-    public static LogRecord createUndoLog(long xid, int operationType, byte[] undoData) {
-        LogRecord log = new LogRecord();
-        log.logType = TYPE_UNDO;
-        log.xid = xid;
-        log.operationType = operationType;
-        log.undoData = undoData != null ? undoData : new byte[0];
-        log.logRecordLength = 8 + 4 + 4 + log.undoData.length;
-        return log;
+    // 构造函数：用于从已有数据恢复日志记录（LSN 已知的情况）
+    public LogRecord(long lsn, int type, byte[] data) {
+        this.lsn = lsn;
+        this.type = type;
+        this.data = (data != null ? data.clone() : new byte[0]);
     }
 
-    public byte[] serialize() {
-        byte[] body = switch (logType) {
-            case TYPE_REDO -> serializeRedoLog();
-            case TYPE_UNDO -> serializeUndoLog();
-            default -> new byte[0];
-        };
 
-        ByteBuffer buffer = ByteBuffer.allocate(1 + 4 + body.length);
-        buffer.put(logType);
-        buffer.putInt(body.length);
-        buffer.put(body);
-        return buffer.array();
+
+    // 获取日志数据（返回数据副本以保证不可变性）
+    public byte[] getData() {
+        return data.clone();
     }
 
-    private byte[] serializeRedoLog() {
-        ByteBuffer buffer = ByteBuffer.allocate((int) logRecordLength);
-        buffer.putLong(xid);
-        buffer.putInt(pageID);
-        buffer.putShort(offset);
-        buffer.putInt(newData.length);
-        buffer.put(newData);
-        return buffer.array();
+    // 计算此 LogRecord 序列化后内容占用的字节大小（不含记录长度前缀）
+    // 序列化格式: [LSN(8 bytes) | Type(4 bytes) | Data(N bytes)]
+    public int getContentSize() {
+        return 8 /*LSN*/ + 4 /*Type*/ + data.length;
     }
 
-    private byte[] serializeUndoLog() {
-        ByteBuffer buffer = ByteBuffer.allocate((int) logRecordLength);
-        buffer.putLong(xid);
-        buffer.putInt(operationType);
-        buffer.putInt(undoData.length);
-        buffer.put(undoData);
-        return buffer.array();
+    // 计算此 LogRecord 在日志页中存储时占用的总大小（包括长度字段）
+    public int getTotalSize() {
+        // total size = 记录长度前缀(4字节) + 内容长度
+        return 4 + getContentSize();
     }
 
-    public static LogRecord deserialize(byte[] entry) {
-        ByteBuffer buffer = ByteBuffer.wrap(entry);
-        byte type = buffer.get();
-        int len = buffer.getInt();
-        byte[] body = new byte[len];
-        buffer.get(body);
-
-        return switch (type) {
-            case TYPE_REDO -> deserializeRedoLog(body);
-            case TYPE_UNDO -> deserializeUndoLog(body);
-            default -> null;
-        };
+    // 将此 LogRecord 序列化写入到 ByteBuffer 中（假定 buffer 有足够空间）
+    public void writeTo(ByteBuffer buffer) {
+        // 序列化格式：
+        // 4字节：记录内容长度 (不含这4字节长度本身)
+        // 8字节：LSN
+        // 4字节：类型
+        // N字节：数据
+        int contentSize = getContentSize();
+        buffer.putInt(contentSize);      // 写入记录内容长度
+        buffer.putLong(lsn);
+        buffer.putInt(type);
+        buffer.put(data);
     }
 
-    private static LogRecord deserializeRedoLog(byte[] data) {
-        ByteBuffer buffer = ByteBuffer.wrap(data);
-        LogRecord log = new LogRecord();
-        log.logType = TYPE_REDO;
-        log.xid = buffer.getLong();
-        log.pageID = buffer.getInt();
-        log.offset = buffer.getShort();
-        int newDataLen = buffer.getInt();
-        log.newData = new byte[newDataLen];
-        buffer.get(log.newData);
-        log.logRecordLength = 8 + 4 + 2 + 4 + newDataLen;
-        return log;
-    }
-
-    private static LogRecord deserializeUndoLog(byte[] data) {
-        ByteBuffer buffer = ByteBuffer.wrap(data);
-        LogRecord log = new LogRecord();
-        log.logType = TYPE_UNDO;
-        log.xid = buffer.getLong();
-        log.operationType = buffer.getInt();
-        int undoDataLen = buffer.getInt();
-        log.undoData = new byte[undoDataLen];
-        buffer.get(log.undoData);
-        log.logRecordLength = 8 + 4 + 4 + undoDataLen;
-        return log;
-    }
-
-    public int getSerializedSize() {
-        return 1 + 4 + (int) logRecordLength;
+    // 从 ByteBuffer 中读出一个 LogRecord（当前位置应指向记录长度字段开头）
+    public static LogRecord readFrom(ByteBuffer buffer) {
+        if (!buffer.hasRemaining()) {
+            return null;
+        }
+        // 读出记录内容长度
+        int contentSize = buffer.getInt();
+        // 读取字段
+        long lsn = buffer.getLong();
+        int type = buffer.getInt();
+        int dataLength = contentSize - 8 - 4;  // 内容长度减去LSN和type的字节数，得到数据长度
+        byte[] data = new byte[dataLength];
+        if (dataLength > 0) {
+            buffer.get(data);
+        }
+        // 构造并返回 LogRecord 对象
+        return new LogRecord(lsn, type, data);
     }
 }

@@ -1,66 +1,50 @@
 package org.lupenghan.eazydb.log.interfaces;
 
 import org.lupenghan.eazydb.log.models.LogRecord;
+import org.lupenghan.eazydb.log.models.LogRecord1;
 
+import java.io.IOException;
 import java.util.List;
 
 public interface LogManager {
-    /**
-     * 初始化日志管理器
-     */
-    void init();
 
     /**
-     * 写入重做日志
-     * @param xid 事务ID
-     * @param pageID 页面ID
-     * @param offset 偏移量
-     * @param newData 新数据
-     * @return 日志序列号
+     * 追加一条新的日志记录到日志中。如果当前页空间不足，则会先将当前页写入磁盘并开启新页。
+     * @param record 要追加的日志记录对象（调用时将由日志管理器分配LSN）
+     * @throws IOException 当写入磁盘发生错误时抛出异常
      */
-    long writeRedoLog(long xid, int pageID, short offset, byte[] newData);
+    void appendLog(LogRecord record) throws IOException;
 
     /**
-     * 写入撤销日志
-     * @param xid 事务ID
-     * @param operationType 操作类型
-     * @param undoData 撤销数据
-     * @return 日志序列号
+     * 从磁盘加载所有日志页并提取其中的日志记录列表，用于系统恢复。
+     * 顺序读取磁盘上所有日志页，反序列化得到日志记录。
+     * @return 按照写入顺序包含所有日志记录的列表
+     * @throws IOException 当从磁盘读取发生错误时抛出异常
      */
-    long writeUndoLog(long xid, int operationType, byte[] undoData);
+    List<LogRecord> loadAllLogs() throws IOException;
+//    void init();
 
-    /**
-     * 读取日志记录
-     * @param lsn 日志序列号
-     * @return 日志记录
-     */
-    LogRecord readLog(long lsn);
-
-    /**
-     * 获取指定事务的所有日志记录
-     * @param xid 事务ID
-     * @return 日志记录列表
-     */
-    List<LogRecord> getTransactionLogs(long xid);
-
-    /**
-     * 创建检查点
-     */
-    void createCheckpoint();
-
-    /**
-     * 获取所有未完成的事务ID
-     * @return 未完成事务ID列表
-     */
-    List<Long> getActiveTransactions();
-
-    /**
-     * 恢复数据库
-     */
-    void recover();
-
-    /**
-     * 关闭日志管理器
-     */
-    void close();
+//
+//    long writeRedoLog(long xid, int pageID, short offset, byte[] newData);
+//
+//
+//    long writeUndoLog(long xid, int operationType, byte[] undoData);
+//
+//
+//    LogRecord1 readLog(long lsn);
+//
+//
+//    List<LogRecord1> getTransactionLogs(long xid);
+//
+//
+//    void createCheckpoint();
+//
+//    //获取全部未完成
+//    List<Long> getActiveTransactions();
+//
+//
+//    void recover();
+//
+//
+//    void close();
 }

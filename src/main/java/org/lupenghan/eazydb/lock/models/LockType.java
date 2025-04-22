@@ -4,7 +4,9 @@ import lombok.Getter;
 
 @Getter
 public enum LockType {
+    //共享锁
     SHARED_LOCK(0),
+    // 排他锁
     EXCLUSIVE_LOCK(1);
 
     private final int value;
