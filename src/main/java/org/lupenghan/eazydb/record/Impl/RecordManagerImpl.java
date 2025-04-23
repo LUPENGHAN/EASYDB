@@ -1,6 +1,7 @@
 package org.lupenghan.eazydb.record.Impl;
 
 import lombok.Data;
+import org.lupenghan.eazydb.lock.models.LockType;
 import org.lupenghan.eazydb.log.interfaces.LogManager;
 import org.lupenghan.eazydb.log.models.LogRecord;
 import org.lupenghan.eazydb.page.interfaces.PageManager;
@@ -31,6 +32,8 @@ public class RecordManagerImpl implements RecordManager {
     }
     @Override
     public Record insert(Page page, byte[] data, long xid) throws IOException {
+        transactionManager.acquireLock(xid, page, LockType.EXCLUSIVE_LOCK);
+
         // 简化：假设单字段，无 NULL
         byte[] nullBitmap = new byte[1];
         short[] fieldOffsets = new short[] {0};
@@ -111,6 +114,8 @@ public class RecordManagerImpl implements RecordManager {
 
     @Override
     public Record update(Page page, Record record, byte[] newData, long xid) throws IOException {
+        transactionManager.acquireLock(xid, page, LockType.EXCLUSIVE_LOCK);
+
         record.setStatus(UPDATED);
         record.setEndTS(System.currentTimeMillis());
 
@@ -170,6 +175,8 @@ public class RecordManagerImpl implements RecordManager {
 
     @Override
     public void delete(Page page, Record record, long xid) throws IOException {
+        transactionManager.acquireLock(xid, page, LockType.EXCLUSIVE_LOCK);
+
         record.setStatus(DELETED);
         record.setEndTS(System.currentTimeMillis());
 
@@ -194,6 +201,7 @@ public class RecordManagerImpl implements RecordManager {
 
     @Override
     public byte[] select(Page page, Record record) {
+
         if (!isValidRecord(record)) {
             return null;
         }

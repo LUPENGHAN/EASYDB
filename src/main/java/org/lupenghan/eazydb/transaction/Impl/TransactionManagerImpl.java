@@ -64,11 +64,11 @@ public class TransactionManagerImpl implements TransactionManager {
         }
 
         try {
-//            // 释放所有锁
-//            lockManager.releaseAllLocks(xid);
-//            transactionLocks.remove(xid);
-//            modifiedPagesMap.remove(xid);
-//            modifiedRecordsMap.remove(xid);
+            // 释放所有锁
+            lockManager.releaseAllLocks(xid);
+            transactionLocks.remove(xid);
+            modifiedPagesMap.remove(xid);
+            modifiedRecordsMap.remove(xid);
 
             // 写入提交日志
             logManager.flush();
@@ -87,11 +87,11 @@ public class TransactionManagerImpl implements TransactionManager {
             throw new IllegalArgumentException("Transaction " + xid + " does not exist");
         }
 
-//            // 释放所有锁
-//            lockManager.releaseAllLocks(xid);
-//            transactionLocks.remove(xid);
-//            modifiedPagesMap.remove(xid);
-//            modifiedRecordsMap.remove(xid);
+            // 释放所有锁
+            lockManager.releaseAllLocks(xid);
+            transactionLocks.remove(xid);
+            modifiedPagesMap.remove(xid);
+            modifiedRecordsMap.remove(xid);
 
         List<LogRecord> logs = logManager.loadAllLogs();
         List<LogRecord> undoLogs = logs.stream()
