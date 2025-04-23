@@ -3,6 +3,7 @@ package org.lupenghan.query.interfaces;
 import java.io.IOException;
 import java.util.List;
 import org.lupenghan.eazydb.record.models.Record;
+import org.lupenghan.eazydb.table.models.Column;
 
 
 public interface QueryEngine {
@@ -21,5 +22,10 @@ public interface QueryEngine {
     byte[] select(String tableName, int pageId, int slotId) throws IOException;
 
     List<byte[]> selectAll(String tableName) throws IOException;
+
+    void createTable(String tableName, List<Column> columns, String primaryKey) throws IOException;
+
+    void dropTable(String tableName) throws IOException;
+
 }
 

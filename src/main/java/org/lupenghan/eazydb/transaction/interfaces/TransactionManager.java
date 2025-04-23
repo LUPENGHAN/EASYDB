@@ -1,5 +1,6 @@
 package org.lupenghan.eazydb.transaction.interfaces;
 
+import org.lupenghan.eazydb.lock.interfaces.LockManager;
 import org.lupenghan.eazydb.lock.models.Lock;
 import org.lupenghan.eazydb.lock.models.LockType;
 import org.lupenghan.eazydb.page.models.Page;
@@ -43,4 +44,5 @@ public interface TransactionManager {
      */
     boolean holdsLock(long transactionId, Page page);
 
+    LockManager getLockManager();
 }

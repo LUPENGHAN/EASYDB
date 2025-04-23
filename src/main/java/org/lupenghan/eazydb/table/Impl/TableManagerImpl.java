@@ -1,5 +1,6 @@
 package org.lupenghan.eazydb.table.Impl;
 
+import lombok.Data;
 import org.lupenghan.eazydb.table.interfaces.TableManager;
 import org.lupenghan.eazydb.table.models.Table;
 
@@ -14,6 +15,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+@Data
 public class TableManagerImpl implements TableManager {
     private static final String CATALOG_DIR = "data/catalog/";
     private final Map<String, Table> tableMap = new HashMap<>();

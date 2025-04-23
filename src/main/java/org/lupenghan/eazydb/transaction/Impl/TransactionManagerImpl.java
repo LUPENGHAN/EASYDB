@@ -1,7 +1,6 @@
 package org.lupenghan.eazydb.transaction.Impl;
 
 import lombok.AllArgsConstructor;
-import lombok.extern.log4j.Log4j;
 import lombok.extern.slf4j.Slf4j;
 import org.lupenghan.eazydb.lock.interfaces.LockManager;
 import org.lupenghan.eazydb.lock.models.Lock;
@@ -20,7 +19,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.stream.Collectors;
 
 @AllArgsConstructor
 @Slf4j
@@ -64,16 +62,18 @@ public class TransactionManagerImpl implements TransactionManager {
         }
 
         try {
+            // 写入提交日志
+            logManager.flush();
+            // 更新事务状态
+            transactionStatus.put(xid, TransactionStatus.COMMITTED);
+            
             // 释放所有锁
             lockManager.releaseAllLocks(xid);
             transactionLocks.remove(xid);
             modifiedPagesMap.remove(xid);
             modifiedRecordsMap.remove(xid);
-
-            // 写入提交日志
-            logManager.flush();
-            // 更新事务状态
-            transactionStatus.put(xid, TransactionStatus.COMMITTED);
+            
+            log.info("事务 {} 已成功提交", xid);
         } catch (Exception e) {
             log.error("Failed to commit transaction {}", xid, e);
             rollback(xid);
@@ -87,12 +87,6 @@ public class TransactionManagerImpl implements TransactionManager {
             throw new IllegalArgumentException("Transaction " + xid + " does not exist");
         }
 
-            // 释放所有锁
-            lockManager.releaseAllLocks(xid);
-            transactionLocks.remove(xid);
-            modifiedPagesMap.remove(xid);
-            modifiedRecordsMap.remove(xid);
-
         List<LogRecord> logs = logManager.loadAllLogs();
         List<LogRecord> undoLogs = logs.stream()
                 .filter(l -> l.getXid() == xid && l.getLogType() == LogRecord.TYPE_UNDO)
@@ -105,6 +99,14 @@ public class TransactionManagerImpl implements TransactionManager {
         }
 
         transactionStatus.put(xid, TransactionStatus.ABORTED);
+        
+        // 释放所有锁
+        lockManager.releaseAllLocks(xid);
+        transactionLocks.remove(xid);
+        modifiedPagesMap.remove(xid);
+        modifiedRecordsMap.remove(xid);
+        
+        log.info("事务 {} 已回滚", xid);
     }
 
     @Override
@@ -126,7 +128,26 @@ public class TransactionManagerImpl implements TransactionManager {
 
     @Override
     public Lock acquireLock(long transactionId, Page page, LockType lockType) {
-        return null;
+        int pageId = page.getHeader().getPageId();
+        int slotId = -1; // 默认为页级锁
+        
+        // 获取锁
+        Lock lock = lockManager.acquireLock(transactionId, lockType, pageId, slotId);
+        
+        if (lock != null) {
+            // 锁获取成功，记录在事务锁映射中
+            Map<Page, Lock> locks = transactionLocks.computeIfAbsent(transactionId, k -> new ConcurrentHashMap<>());
+            locks.put(page, lock);
+            
+            // 如果是写操作，将页面添加到修改页面列表中
+            if (lockType == LockType.EXCLUSIVE_LOCK) {
+                modifiedPagesMap.computeIfAbsent(transactionId, k -> new ArrayList<>()).add(page);
+            }
+        } else {
+            log.warn("事务 {} 无法获取页 {} 的 {} 锁", transactionId, pageId, lockType);
+        }
+        
+        return lock;
     }
 
     @Override
@@ -144,4 +165,9 @@ public class TransactionManagerImpl implements TransactionManager {
     public boolean holdsLock(long transactionId, Page page) {
         Map<Page, Lock> locks = transactionLocks.get(transactionId);
         return locks != null && locks.containsKey(page);    }
+
+    @Override
+    public LockManager getLockManager() {
+        return this.lockManager;
+    }
 }
