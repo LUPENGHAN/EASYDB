@@ -1,7 +1,6 @@
 package org.lupenghan.eazydb.log.interfaces;
 
 import org.lupenghan.eazydb.log.models.LogRecord;
-import org.lupenghan.eazydb.log.models.LogRecord1;
 
 import java.io.IOException;
 import java.util.List;
@@ -15,6 +14,7 @@ public interface LogManager {
      */
     void appendLog(LogRecord record) throws IOException;
 
+    void flush() throws IOException;
     /**
      * 从磁盘加载所有日志页并提取其中的日志记录列表，用于系统恢复。
      * 顺序读取磁盘上所有日志页，反序列化得到日志记录。

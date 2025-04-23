@@ -5,12 +5,13 @@ import org.lupenghan.eazydb.lock.models.LockType;
 import org.lupenghan.eazydb.page.models.Page;
 import org.lupenghan.eazydb.transaction.models.TransactionStatus;
 
+import java.io.IOException;
 import java.util.List;
 
 public interface TransactionManager {
     long begin();
-    void commit(long xid);
-    void rollback(long xid);
+    void commit(long xid) throws IOException;
+    void rollback(long xid) throws IOException;
     //获得事务状态
     TransactionStatus getTransactionsStatus(long TransactionsId);
     // 获得哪些内容修改了, 用于进行数据恢复

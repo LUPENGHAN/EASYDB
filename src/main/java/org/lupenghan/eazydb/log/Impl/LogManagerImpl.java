@@ -5,18 +5,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.lupenghan.eazydb.log.interfaces.LogManager;
 import org.lupenghan.eazydb.log.models.LogPage;
 import org.lupenghan.eazydb.log.models.LogRecord;
-import org.lupenghan.eazydb.log.models.LogRecord1;
 
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
 import java.nio.ByteBuffer;
-import java.nio.channels.FileChannel;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicInteger;
+
 @Slf4j
 public class LogManagerImpl implements LogManager {
     private RandomAccessFile raFile;
@@ -68,20 +65,33 @@ public class LogManagerImpl implements LogManager {
     }
 
     @Override
-    public synchronized void appendLog(LogRecord record) throws IOException {
+    public synchronized void appendLog(LogRecord logRecord) throws IOException {
         // 检查日志记录大小是否超过单页可用容量（4096 - 页头12字节）
-        if (record.getTotalSize() > LogPage.PAGE_SIZE - 12) {
+        if (logRecord.getTotalSize() > LogPage.PAGE_SIZE - 12) {
             throw new IllegalArgumentException("LogRecord is too large to fit in a single page");
         }
         // 当前页空间不足时，先刷盘当前页并换页
-        if (!currentPage.hasSpaceFor(record)) {
+        if (!currentPage.hasSpaceFor(logRecord)) {
             flushCurrentPage();
         }
         // 分配新的 LSN 并将记录追加到当前页
-        record.setLsn(nextLSN++);
-        currentPage.addRecord(record);
+        logRecord.setLsn(nextLSN++);
+        //添加数据
+        currentPage.addRecord(logRecord);
     }
 
+    @Override
+    public synchronized void flush() throws IOException {
+        if (currentPage.getEntryCount() == 0) {
+            // 当前页无记录则无需写盘
+            return;
+        }
+        byte[] pageData = currentPage.serialize();   // 把日志页序列化为 byte[]
+        raFile.write(pageData);                      // 写入文件
+        raFile.getFD().sync();// 强制刷入磁盘（操作系统缓存也跳过）
+
+
+    }
     // 将当前页写入磁盘并开启一个新页
     private void flushCurrentPage() throws IOException {
         if (currentPage.getEntryCount() == 0) {

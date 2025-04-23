@@ -1,12 +1,16 @@
 package org.lupenghan.eazydb.record.Impl;
 
 import lombok.Data;
+import org.lupenghan.eazydb.log.interfaces.LogManager;
+import org.lupenghan.eazydb.log.models.LogRecord;
 import org.lupenghan.eazydb.page.interfaces.PageManager;
 import org.lupenghan.eazydb.page.models.Page;
 import org.lupenghan.eazydb.page.models.SlotDirectoryEntry;
 import org.lupenghan.eazydb.record.interfaces.RecordManager;
 import org.lupenghan.eazydb.record.models.Record;
+import org.lupenghan.eazydb.transaction.interfaces.TransactionManager;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -14,14 +18,19 @@ import static org.lupenghan.eazydb.record.models.RecordStatus.*;
 
 @Data
 public class RecordManagerImpl implements RecordManager {
-    private final PageManager pageManager;
     private final byte ACTIVE = 0;
     private final byte DELETED = 1;
     private final byte UPDATED = 2;
-
-
+    private final PageManager pageManager;
+    private final LogManager logManager;
+    private final TransactionManager transactionManager;
+    public RecordManagerImpl(PageManager pageManager, LogManager logManager, TransactionManager transactionManager) {
+        this.pageManager = pageManager;
+        this.logManager = logManager;
+        this.transactionManager = transactionManager;
+    }
     @Override
-    public Record insert(Page page, byte[] data, long xid) {
+    public Record insert(Page page, byte[] data, long xid) throws IOException {
         // 简化：假设单字段，无 NULL
         byte[] nullBitmap = new byte[1];
         short[] fieldOffsets = new short[] {0};
@@ -63,6 +72,15 @@ public class RecordManagerImpl implements RecordManager {
         record.setNullBitmap(nullBitmap);
         record.setFieldOffsets(fieldOffsets);
 
+        LogRecord undoLog = LogRecord.createUndoLog(
+                xid,
+                LogRecord.UNDO_INSERT,
+                (short) page.getSlotDirectory().get(record.getSlotId()).getOffset(),
+                record.getData(),
+                page.getHeader().getPageId()
+        );
+        logManager.appendLog(undoLog);
+
         // 插入逻辑：包含槽位管理
         int slotId = findReusableSlot(page);
         if (slotId == -1) {
@@ -83,14 +101,28 @@ public class RecordManagerImpl implements RecordManager {
         page.getSlotDirectory().set(slotId, slot);
         page.getHeader().setRecordCount(page.getHeader().getRecordCount() + 1);
         page.setDirty(true);
+        LogRecord logRecorde = LogRecord.createRedoLog(xid,page.getHeader().getPageId(), (short) offset,data);
+        // 插入日志和事务
+        logManager.appendLog(logRecorde);
+        transactionManager.getModifiedPages(xid).add(page);
 
         return record;
     }
 
     @Override
-    public Record update(Page page, Record record, byte[] newData, long xid) {
+    public Record update(Page page, Record record, byte[] newData, long xid) throws IOException {
         record.setStatus(UPDATED);
         record.setEndTS(System.currentTimeMillis());
+
+        LogRecord undoLog = LogRecord.createUndoLog(
+                xid,
+                LogRecord.UNDO_UPDATE,
+                (short) page.getSlotDirectory().get(record.getSlotId()).getOffset(),
+                record.getData(),
+                page.getHeader().getPageId()
+        );
+        logManager.appendLog(undoLog);
+
 
         Record newRecord = new Record();
         newRecord.setStatus(ACTIVE);
@@ -101,14 +133,57 @@ public class RecordManagerImpl implements RecordManager {
         newRecord.setData(newData);
         newRecord.setNullBitmap(record.getNullBitmap().clone());
         newRecord.setFieldOffsets(record.getFieldOffsets().clone());
+        int offset = page.allocateRecordSpace(newRecord.getData().length + 64); // 估算大小
+        if (offset == -1) return null;
 
-        return insert(page, newRecord.getData(), xid);
+        int slotId = findReusableSlot(page);
+        if (slotId == -1) {
+            slotId = page.getSlotDirectory().size();
+            page.getSlotDirectory().add(null);
+            page.getHeader().setSlotCount(page.getHeader().getSlotCount() + 1);
+        }
+
+        newRecord.setPageId(page.getHeader().getPageId());
+        newRecord.setSlotId(slotId);
+        page.getRecords().add(newRecord);
+
+        SlotDirectoryEntry newSlot = SlotDirectoryEntry.builder()
+                .offset(offset)
+                .inUse(true)
+                .build();
+        page.getSlotDirectory().set(slotId, newSlot);
+        page.getHeader().setRecordCount(page.getHeader().getRecordCount() + 1);
+        page.setDirty(true);
+
+        // Step ⑤ 写入 Redo 日志
+        LogRecord redoLog = LogRecord.createRedoLog(
+                xid,
+                page.getHeader().getPageId(),
+                (short) offset,
+                newData
+        );
+        logManager.appendLog(redoLog);
+
+        transactionManager.getModifiedPages(xid).add(page);
+        return newRecord;
     }
 
     @Override
-    public void delete(Page page, Record record, long xid) {
+    public void delete(Page page, Record record, long xid) throws IOException {
         record.setStatus(DELETED);
         record.setEndTS(System.currentTimeMillis());
+
+
+        LogRecord undoLog = LogRecord.createUndoLog(
+                xid,
+                LogRecord.UNDO_DELETE,
+                (short) page.getSlotDirectory().get(record.getSlotId()).getOffset(),
+                record.getData(),
+                page.getHeader().getPageId()
+        );
+        logManager.appendLog(undoLog);
+
+
         record.setXid(xid);
         SlotDirectoryEntry slot = page.getSlotDirectory().get(record.getSlotId());
         if (slot != null) slot.setInUse(false);
@@ -123,6 +198,29 @@ public class RecordManagerImpl implements RecordManager {
             return null;
         }
         return record.getData();
+    }
+    @Override
+    public void rollbackRecord(Page page, LogRecord log) {
+        for (Record record : page.getRecords()) {
+            SlotDirectoryEntry slot = page.getSlotDirectory().get(record.getSlotId());
+            if (slot.getOffset() == log.getOffset()) {
+                switch (log.getOperationType()) {
+                    case LogRecord.UNDO_UPDATE -> {
+                        record.setData(log.getUndoData());
+                        record.setStatus(ACTIVE);
+                    }
+                    case LogRecord.UNDO_DELETE -> {
+                        record.setStatus(ACTIVE);
+                        record.setEndTS(Long.MAX_VALUE);
+                    }
+                    case LogRecord.UNDO_INSERT -> {
+                        record.setStatus(DELETED); // 插入回滚就等价于删除
+                        record.setEndTS(System.currentTimeMillis());
+                    }
+                }
+                page.setDirty(true);
+            }
+        }
     }
 
     @Override
