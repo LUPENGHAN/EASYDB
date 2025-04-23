@@ -33,29 +33,21 @@ public class QueryEngineImpl implements QueryEngine {
         this.transactionManager = transactionManager;
     }
     @Override
-    public void createTable(String tableName, List<Column> columns, String primaryKey) throws IOException {
-        if (tableManager.getTable(tableName) != null) {
-            throw new IllegalArgumentException("表已存在: " + tableName);
+    public void createTable(Table table) throws IOException {
+        if (tableManager.getTable(table.getName()) != null) {
+            throw new IllegalArgumentException("表已存在: " + table.getName());
         }
 
-        Table table = Table.builder()
-                .name(tableName)
-                .columns(columns)
-                .primaryKey(primaryKey)
-                .uniqueKeys(List.of())
-                .foreignKeys(List.of())
-                .createdTime(System.currentTimeMillis())
-                .lastModifiedTime(System.currentTimeMillis())
-                .rowCount(0)
-                .pageCount(0)
-                .build();
-
+        table.setCreatedTime(System.currentTimeMillis());
+        table.setLastModifiedTime(System.currentTimeMillis());
         tableManager.createTable(table);
-        log.info("表 {} 创建成功，共 {} 列", tableName, columns.size());
+
+        log.info("✅ 表 {} 创建成功，共 {} 列", table.getName(), table.getColumns().size());
     }
 
+
     @Override
-    public void dropTable(String tableName) throws IOException {
+    public boolean dropTable(String tableName) throws IOException {
         log.info("执行 DROP TABLE {}", tableName);
 
         boolean success = tableManager.dropTable(tableName);
@@ -65,6 +57,7 @@ public class QueryEngineImpl implements QueryEngine {
         }
 
         log.info("表 {} 删除成功", tableName);
+        return success;
     }
 
 

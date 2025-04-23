@@ -15,6 +15,7 @@ public interface RecordManager {
     List<Record> getAllRecords(Page page);
     void rollbackRecord(Page page, LogRecord log);
     boolean isValidRecord(Record record);
+    void rollbackTransaction(long xid) throws IOException;
 
 
 }

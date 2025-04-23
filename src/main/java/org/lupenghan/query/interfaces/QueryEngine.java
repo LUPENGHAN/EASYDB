@@ -2,8 +2,10 @@ package org.lupenghan.query.interfaces;
 
 import java.io.IOException;
 import java.util.List;
-import org.lupenghan.eazydb.record.models.Record;
+
+import org.lupenghan.eazydb.table.interfaces.TableManager;
 import org.lupenghan.eazydb.table.models.Column;
+import org.lupenghan.eazydb.table.models.Table;
 
 
 public interface QueryEngine {
@@ -23,9 +25,12 @@ public interface QueryEngine {
 
     List<byte[]> selectAll(String tableName) throws IOException;
 
-    void createTable(String tableName, List<Column> columns, String primaryKey) throws IOException;
+    void createTable(Table table) throws IOException;
 
-    void dropTable(String tableName) throws IOException;
+    boolean dropTable(String tableName) throws IOException;
+
+    TableManager getTableManager();
+
 
 }
 

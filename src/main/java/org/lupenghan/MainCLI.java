@@ -1,22 +1,19 @@
 package org.lupenghan;
 
-import org.lupenghan.eazydb.lock.interfaces.LockManager;
-import org.lupenghan.eazydb.log.interfaces.LogManager;
-import org.lupenghan.eazydb.page.interfaces.PageManager;
-import org.lupenghan.eazydb.record.interfaces.RecordManager;
-import org.lupenghan.query.Impl.QueryEngineImpl;
-import org.lupenghan.query.interfaces.QueryEngine;
+import org.lupenghan.eazydb.lock.Impl.LockManagerImpl;
+import org.lupenghan.eazydb.log.Impl.LogManagerImpl;
+import org.lupenghan.eazydb.page.Impl.PageManagerImpl;
+import org.lupenghan.eazydb.record.Impl.RecordManagerImpl;
+import org.lupenghan.eazydb.table.Impl.TableManagerImpl;
+import org.lupenghan.eazydb.table.models.Table;
+import org.lupenghan.eazydb.transaction.Impl.TransactionManagerImpl;
 import org.lupenghan.parser.SQLParser;
 import org.lupenghan.parser.SQLParser.Command;
 import org.lupenghan.parser.SQLParser.CommandType;
-
-// 以下这些 manager 要你自己传入或初始化
-import org.lupenghan.eazydb.page.Impl.PageManagerImpl;
-import org.lupenghan.eazydb.record.Impl.RecordManagerImpl;
-import org.lupenghan.eazydb.log.Impl.LogManagerImpl;
-import org.lupenghan.eazydb.lock.Impl.LockManagerImpl;
-import org.lupenghan.eazydb.table.Impl.TableManagerImpl;
-import org.lupenghan.eazydb.transaction.Impl.TransactionManagerImpl;
+import org.lupenghan.parser.TableParser;
+import org.lupenghan.query.Impl.QueryEngineImpl;
+import org.lupenghan.query.interfaces.QueryEngine;
+import org.lupenghan.eazydb.table.interfaces.TableManager;
 
 import java.io.IOException;
 import java.util.List;
@@ -24,72 +21,130 @@ import java.util.Scanner;
 
 public class MainCLI {
 
-    public static void main(String[] args) throws IOException {
-        var tableManager = new TableManagerImpl();
-        var pageManager = new PageManagerImpl("data/pages.db");
-        var logManager = new LogManagerImpl("data/wal.log");
-        var lockManager = new LockManagerImpl();
-        var transactionManager = new TransactionManagerImpl(logManager, lockManager,pageManager);
-        var recordManager = new RecordManagerImpl(pageManager, logManager, transactionManager);
+    private final QueryEngine queryEngine;
 
-        QueryEngine queryEngine = new QueryEngineImpl(
-                tableManager, pageManager, recordManager, transactionManager
-        );
+    public MainCLI(QueryEngine queryEngine) {
+        this.queryEngine = queryEngine;
+    }
 
+    public void run() {
         Scanner scanner = new Scanner(System.in);
-        System.out.println("✅ 欢迎使用 EazyDB 交互终端，输入 SQL 或 exit");
-
-        long xid = queryEngine.beginTransaction();
+        System.out.println("欢迎使用 EazyDB 🌱 简易数据库。输入 SQL 或 exit 退出。");
 
         while (true) {
-            System.out.print("> ");
-            String input = scanner.nextLine().trim();
-            if (input.equalsIgnoreCase("exit")) break;
+            System.out.print("\n> ");
+            String sql = scanner.nextLine().trim();
+            if (sql.equalsIgnoreCase("exit") || sql.equalsIgnoreCase("quit")) break;
+            if (sql.isEmpty()) continue;
 
             try {
-                Command command = SQLParser.parse(input);
+                Command cmd = SQLParser.parse(sql);
 
-                switch (command.getType()) {
+                switch (cmd.getType()) {
                     case CREATE_TABLE -> {
-                        tableManager.createTable(TableParser.parse(command.getRaw()));
-                        System.out.println("✅ 表创建成功");
+                        Table table = TableParser.parseCreateTable(cmd.getRaw());
+                        queryEngine.createTable(table);
+                        System.out.println("✅ 创建表成功: " + table.getName());
                     }
+
                     case DROP_TABLE -> {
-                        boolean dropped = tableManager.dropTable(command.getTableName());
-                        System.out.println(dropped ? "✅ 表删除成功" : "❌ 删除失败");
+                        boolean dropped = queryEngine.dropTable(cmd.getTableName());
+                        if (dropped) System.out.println("🗑️ 表已删除: " + cmd.getTableName());
+                        else System.out.println("⚠️ 表不存在: " + cmd.getTableName());
                     }
+
                     case INSERT -> {
-                        queryEngine.insert(xid, command.getTableName(), command.getValue());
-                        System.out.println("✅ 插入成功");
-                    }
-                    case SELECT_ONE -> {
-                        byte[] result = queryEngine.select(command.getTableName(), command.getPageId(), command.getSlotId());
-                        System.out.println(result == null ? "❌ 未找到记录" : "🎯 记录内容: " + new String(result));
-                    }
-                    case SELECT_ALL -> {
-                        List<byte[]> records = queryEngine.selectAll(command.getTableName());
-                        System.out.println("📋 共查询到 " + records.size() + " 条记录:");
-                        for (byte[] rec : records) {
-                            System.out.println(" - " + new String(rec));
+                        // 获取表定义，用于处理列和数据
+                        Table table = ((QueryEngineImpl)queryEngine).getTableManager().getTable(cmd.getTableName());
+                        if (table == null) {
+                            System.out.println("⚠️ 表不存在: " + cmd.getTableName());
+                            break;
+                        }
+                        
+                        // 处理值数据
+                        String valueStr = new String(cmd.getValue());
+                        System.out.println("插入数据: " + valueStr);
+                        
+                        // 开始事务并执行插入
+                        long xid = queryEngine.beginTransaction();
+                        try {
+                            queryEngine.insert(xid, cmd.getTableName(), cmd.getValue());
+                            queryEngine.commitTransaction(xid);
+                            System.out.println("✅ 插入成功");
+                        } catch (Exception e) {
+                            try {
+                                queryEngine.rollbackTransaction(xid);
+                            } catch (Exception ex) {
+                                System.err.println("回滚失败: " + ex.getMessage());
+                            }
+                            throw e;
                         }
                     }
-                    case UPDATE -> {
-                        queryEngine.update(xid, command.getTableName(), command.getPageId(), command.getSlotId(), command.getValue());
-                        System.out.println("✅ 更新成功");
+
+                    case SELECT_ALL -> {
+                        List<byte[]> rows = queryEngine.selectAll(cmd.getTableName());
+                        System.out.println("📄 查询结果：");
+                        for (byte[] row : rows) {
+                            System.out.println(" - " + new String(row));
+                        }
                     }
+
+                    case SELECT_ONE -> {
+                        byte[] data = queryEngine.select(cmd.getTableName(), cmd.getPageId(), cmd.getSlotId());
+                        if (data != null) {
+                            System.out.println("📍 查询结果: " + new String(data));
+                        } else {
+                            System.out.println("⚠️ 没有找到记录");
+                        }
+                    }
+
                     case DELETE -> {
-                        queryEngine.delete(xid, command.getTableName(), command.getPageId(), command.getSlotId());
-                        System.out.println("✅ 删除成功");
+                        long xid = queryEngine.beginTransaction();
+                        queryEngine.delete(xid, cmd.getTableName(), cmd.getPageId(), cmd.getSlotId());
+                        queryEngine.commitTransaction(xid);
+                        System.out.println("🗑️ 删除成功");
                     }
-                    default -> System.out.println("❓ 无效命令或暂不支持");
+
+                    case UPDATE -> {
+                        long xid = queryEngine.beginTransaction();
+                        queryEngine.update(xid, cmd.getTableName(), cmd.getPageId(), cmd.getSlotId(), cmd.getValue());
+                        queryEngine.commitTransaction(xid);
+                        System.out.println("✏️ 更新成功");
+                    }
+
+                    case UNKNOWN -> {
+                        System.out.println("❌ 无法解析的命令，请检查 SQL 语法");
+                    }
                 }
 
             } catch (Exception e) {
-                System.err.println("💥 执行失败: " + e.getMessage());
+                System.err.println("⚠️ 执行出错：" + e.getMessage());
+                e.printStackTrace();
             }
         }
 
-        queryEngine.commitTransaction(xid);
-        System.out.println("🧾 事务已提交，Bye!");
+        System.out.println("👋 再见！");
     }
+    public static void main(String[] args) throws Exception {
+        // 初始化组件
+        var pageManager = new PageManagerImpl("data/page/page.page");
+        var logManager = new LogManagerImpl();
+        var lockManager = new LockManagerImpl();
+        var transactionManager = new TransactionManagerImpl(logManager, lockManager,pageManager);
+        var recordManager = new RecordManagerImpl(pageManager, logManager, transactionManager);
+        var tableManager = new TableManagerImpl();
+
+        // 创建引擎
+        QueryEngine queryEngine = new QueryEngineImpl(
+                tableManager,
+                pageManager,
+                recordManager,
+                transactionManager
+        );
+
+        // 启动 CLI
+        MainCLI cli = new MainCLI(queryEngine);
+        cli.run();
+    }
+
 }

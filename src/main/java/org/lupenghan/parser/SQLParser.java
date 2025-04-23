@@ -11,81 +11,124 @@ import java.util.*;
 public class SQLParser {
 
     public static Command parse(String sql) {
+        // 去除结尾分号并清理空白
         sql = sql.trim().replaceAll(";$", "");
 
-        if (sql.toUpperCase().startsWith("CREATE TABLE")) {
-            return Command.builder()
-                    .type(CommandType.CREATE_TABLE)
-                    .raw(sql)
-                    .build();
+        // 获取SQL命令的第一个词，用于初步识别命令类型
+        String firstWord = sql.split("\\s+")[0].toUpperCase();
+
+        switch (firstWord) {
+            case "CREATE":
+                if (sql.toUpperCase().startsWith("CREATE TABLE")) {
+                    return Command.builder()
+                            .type(CommandType.CREATE_TABLE)
+                            .raw(sql)
+                            .build();
+                }
+                break;
+
+            case "DROP":
+                if (sql.toUpperCase().startsWith("DROP TABLE")) {
+                    String[] parts = sql.split("\\s+", 3);
+                    if (parts.length >= 3) {
+                        return Command.builder()
+                                .type(CommandType.DROP_TABLE)
+                                .tableName(parts[2])
+                                .build();
+                    }
+                }
+                break;
+
+            case "SELECT":
+                if (sql.toUpperCase().startsWith("SELECT * FROM")) {
+                    String[] parts = sql.split("\\s+", 4);
+                    if (parts.length >= 4) {
+                        return Command.builder()
+                                .type(CommandType.SELECT_ALL)
+                                .tableName(parts[3])
+                                .build();
+                    }
+                } else if (sql.toUpperCase().startsWith("SELECT FROM")) {
+                    Pattern pattern = Pattern.compile("SELECT FROM (\\w+) WHERE page=(\\d+) AND slot=(\\d+)",
+                            Pattern.CASE_INSENSITIVE);
+                    Matcher matcher = pattern.matcher(sql);
+                    if (matcher.find()) {
+                        return Command.builder()
+                                .type(CommandType.SELECT_ONE)
+                                .tableName(matcher.group(1))
+                                .pageId(Integer.parseInt(matcher.group(2)))
+                                .slotId(Integer.parseInt(matcher.group(3)))
+                                .build();
+                    }
+                }
+                break;
+
+            case "DELETE":
+                if (sql.toUpperCase().startsWith("DELETE FROM")) {
+                    Pattern pattern = Pattern.compile("DELETE FROM (\\w+) WHERE page=(\\d+) AND slot=(\\d+)",
+                            Pattern.CASE_INSENSITIVE);
+                    Matcher matcher = pattern.matcher(sql);
+                    if (matcher.find()) {
+                        return Command.builder()
+                                .type(CommandType.DELETE)
+                                .tableName(matcher.group(1))
+                                .pageId(Integer.parseInt(matcher.group(2)))
+                                .slotId(Integer.parseInt(matcher.group(3)))
+                                .build();
+                    }
+                }
+                break;
+
+            case "UPDATE":
+                // 优化UPDATE命令解析，支持更灵活的语法
+                // 支持 UPDATE table SET value='value' WHERE page=N AND slot=M
+                // 或 UPDATE table SET col='value' WHERE page=N AND slot=M
+                Pattern updatePattern = Pattern.compile(
+                        "UPDATE (\\w+) SET (?:value|\\w+)=['\"]?([^'\"]+)['\"]? WHERE page=(\\d+) AND slot=(\\d+)",
+                        Pattern.CASE_INSENSITIVE);
+                Matcher updateMatcher = updatePattern.matcher(sql);
+                if (updateMatcher.find()) {
+                    return Command.builder()
+                            .type(CommandType.UPDATE)
+                            .tableName(updateMatcher.group(1))
+                            .value(updateMatcher.group(2).getBytes())
+                            .pageId(Integer.parseInt(updateMatcher.group(3)))
+                            .slotId(Integer.parseInt(updateMatcher.group(4)))
+                            .build();
+                }
+                break;
+
+            case "INSERT":
+                if (sql.toUpperCase().startsWith("INSERT INTO")) {
+                    Pattern pattern = Pattern.compile(
+                            "INSERT INTO (\\w+)(?:\\s*\\(([^)]+)\\))?\\s+VALUES\\s+\\((.+)\\)",
+                            Pattern.CASE_INSENSITIVE);
+                    Matcher matcher = pattern.matcher(sql);
+                    if (matcher.find()) {
+                        String tableName = matcher.group(1);
+                        String columnsPart = matcher.group(2);
+                        String valuesPart = matcher.group(3);
+
+                        String[] columns = null;
+                        if (columnsPart != null && !columnsPart.trim().isEmpty()) {
+                            columns = columnsPart.split("\\s*,\\s*");
+                        }
+
+                        // 清理引号并保留值
+                        String cleanValue = valuesPart.replaceAll("['\"]", "").trim();
+
+                        return Command.builder()
+                                .type(CommandType.INSERT)
+                                .tableName(tableName)
+                                .columns(columns)
+                                .value(cleanValue.getBytes())
+                                .build();
+                    }
+                }
+                break;
         }
 
-        if (sql.toUpperCase().startsWith("DROP TABLE")) {
-            String[] parts = sql.split("\\s+");
-            return Command.builder()
-                    .type(CommandType.DROP_TABLE)
-                    .tableName(parts[2])
-                    .build();
-        }
-
-        if (sql.toUpperCase().startsWith("SELECT * FROM")) {
-            String[] parts = sql.split("\\s+");
-            return Command.builder()
-                    .type(CommandType.SELECT_ALL)
-                    .tableName(parts[3])
-                    .build();
-        }
-
-        if (sql.toUpperCase().startsWith("SELECT FROM")) {
-            Matcher matcher = Pattern.compile("SELECT FROM (\\w+) WHERE page=(\\d+) AND slot=(\\d+)", Pattern.CASE_INSENSITIVE).matcher(sql);
-            if (matcher.find()) {
-                return Command.builder()
-                        .type(CommandType.SELECT_ONE)
-                        .tableName(matcher.group(1))
-                        .pageId(Integer.parseInt(matcher.group(2)))
-                        .slotId(Integer.parseInt(matcher.group(3)))
-                        .build();
-            }
-        }
-
-        if (sql.toUpperCase().startsWith("DELETE FROM")) {
-            Matcher matcher = Pattern.compile("DELETE FROM (\\w+) WHERE page=(\\d+) AND slot=(\\d+)", Pattern.CASE_INSENSITIVE).matcher(sql);
-            if (matcher.find()) {
-                return Command.builder()
-                        .type(CommandType.DELETE)
-                        .tableName(matcher.group(1))
-                        .pageId(Integer.parseInt(matcher.group(2)))
-                        .slotId(Integer.parseInt(matcher.group(3)))
-                        .build();
-            }
-        }
-
-        if (sql.toUpperCase().startsWith("UPDATE")) {
-            Matcher matcher = Pattern.compile("UPDATE (\\w+) SET value='(.+)' WHERE page=(\\d+) AND slot=(\\d+)", Pattern.CASE_INSENSITIVE).matcher(sql);
-            if (matcher.find()) {
-                return Command.builder()
-                        .type(CommandType.UPDATE)
-                        .tableName(matcher.group(1))
-                        .value(matcher.group(2).getBytes())
-                        .pageId(Integer.parseInt(matcher.group(3)))
-                        .slotId(Integer.parseInt(matcher.group(4)))
-                        .build();
-            }
-        }
-
-        if (sql.toUpperCase().startsWith("INSERT INTO")) {
-            Matcher matcher = Pattern.compile("INSERT INTO (\\w+) VALUES \\((.+)\\)", Pattern.CASE_INSENSITIVE).matcher(sql);
-            if (matcher.find()) {
-                String tableName = matcher.group(1);
-                String values = matcher.group(2);
-                return Command.builder()
-                        .type(CommandType.INSERT)
-                        .tableName(tableName)
-                        .value(values.getBytes()) // 简化处理：实际中应根据字段类型解析
-                        .build();
-            }
-        }
-
+        // 如果没有匹配到任何已知命令，返回UNKNOWN
         return Command.builder().type(CommandType.UNKNOWN).build();
     }
 
@@ -100,6 +143,7 @@ public class SQLParser {
         private int pageId;
         private int slotId;
         private byte[] value;
+        private String[] columns;
     }
 
     public enum CommandType {

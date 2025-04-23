@@ -17,7 +17,8 @@ public class TableParser {
         sql = sql.trim().replaceAll(";", "");
 
         Pattern pattern = Pattern.compile(
-                "CREATE TABLE (\\w+) \\((.+)\\)", Pattern.CASE_INSENSITIVE);
+                "CREATE\\s+TABLE\\s+(\\w+)\\s*\\((.*)\\)", Pattern.CASE_INSENSITIVE);
+
         Matcher matcher = pattern.matcher(sql);
         if (!matcher.find()) {
             throw new IllegalArgumentException("无效的 CREATE TABLE 语句");

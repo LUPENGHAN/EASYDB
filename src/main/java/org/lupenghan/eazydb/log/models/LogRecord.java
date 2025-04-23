@@ -68,7 +68,7 @@ public class LogRecord {
             default -> new byte[0];
         };
 
-        ByteBuffer buffer = ByteBuffer.allocate(1 + 4 + 4 + body.length);
+        ByteBuffer buffer = ByteBuffer.allocate(1 + 4 + 8 + body.length);
         buffer.put(logType);
         buffer.putInt(body.length);
         buffer.putLong(lsn);
@@ -81,7 +81,7 @@ public class LogRecord {
         buffer.putLong(xid);
         buffer.putInt(pageID);
         buffer.putShort(offset);
-        buffer.putLong(newData.length);
+        buffer.putInt(newData.length);
         buffer.put(newData);
         return buffer.array();
     }
@@ -89,7 +89,7 @@ public class LogRecord {
     private byte[] serializeUndoLog() {
         ByteBuffer buffer = ByteBuffer.allocate((int) logRecordLength);
         buffer.putLong(xid);
-        buffer.putInt(operationType);
+        buffer.put(operationType);
         buffer.putInt(undoData.length);
         buffer.putShort(offset);
         buffer.putInt(pageID);

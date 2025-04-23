@@ -19,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 
 @AllArgsConstructor
 @Slf4j
@@ -27,17 +28,15 @@ public class TransactionManagerImpl implements TransactionManager {
     private final LogManager logManager;
     private final LockManager lockManager;
     private final PageManager pageManager;
-    private final RecordManager recordManager;
     private final AtomicLong nextXid;
     private final Map<Long, TransactionStatus> transactionStatus;
     private final Map<Long, Map<Page, Lock>> transactionLocks;
     private final Map<Long, List<Page>> modifiedPagesMap;
     private final Map<Long, List<Record>> modifiedRecordsMap;
-    public TransactionManagerImpl(LogManager logManager, LockManager lockManager, PageManager pageManager, RecordManager recordManager) {
+    public TransactionManagerImpl(LogManager logManager, LockManager lockManager, PageManager pageManager ) {
         this.logManager = logManager;
         this.lockManager = lockManager;
         this.pageManager = pageManager;
-        this.recordManager = recordManager;
         this.nextXid = new AtomicLong(1);
         this.transactionStatus = new ConcurrentHashMap<>();
         this.transactionLocks = new ConcurrentHashMap<>();
@@ -81,34 +80,29 @@ public class TransactionManagerImpl implements TransactionManager {
         }
     }
 
-    @Override
     public void rollback(long xid) throws IOException {
         if (!transactionStatus.containsKey(xid)) {
             throw new IllegalArgumentException("Transaction " + xid + " does not exist");
         }
 
-        List<LogRecord> logs = logManager.loadAllLogs();
-        List<LogRecord> undoLogs = logs.stream()
-                .filter(l -> l.getXid() == xid && l.getLogType() == LogRecord.TYPE_UNDO)
-                .toList();
+        // 委托给RecordManager执行具体的回滚操作
+//        recordManager.rollbackTransaction(xid);
 
-        for (int i = undoLogs.size() - 1; i >= 0; i--) {
-            LogRecord log = undoLogs.get(i);
-            Page page = pageManager.readPage(log.getPageID());
-            recordManager.rollbackRecord(page, log);  // 👈 委托执行
-        }
-
+        // 更新事务状态和清理
         transactionStatus.put(xid, TransactionStatus.ABORTED);
-        
-        // 释放所有锁
         lockManager.releaseAllLocks(xid);
         transactionLocks.remove(xid);
         modifiedPagesMap.remove(xid);
         modifiedRecordsMap.remove(xid);
-        
+
         log.info("事务 {} 已回滚", xid);
     }
-
+    public List<LogRecord> getUndoLogs(long xid) throws IOException {
+        List<LogRecord> logs = logManager.loadAllLogs();
+        return logs.stream()
+                .filter(l -> l.getXid() == xid && l.getLogType() == LogRecord.TYPE_UNDO)
+                .collect(Collectors.toList());
+    }
     @Override
     public TransactionStatus getTransactionsStatus(long xid) {
         return transactionStatus.getOrDefault(xid, TransactionStatus.ABORTED);

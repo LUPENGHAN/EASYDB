@@ -61,8 +61,15 @@ public class RecordManagerImpl implements RecordManager {
         int totalRecordSize = baseMetadataSize + nullBitmapSize + fieldOffsetSize + data.length;
 
         int offset = page.allocateRecordSpace(totalRecordSize);
-
         if (offset == -1) return null;
+
+        // 1. 先分配slotId
+        int slotId = findReusableSlot(page);
+        if (slotId == -1) {
+            slotId = page.getSlotDirectory().size();
+            page.getSlotDirectory().add(null); // 占位
+            page.getHeader().setSlotCount(page.getHeader().getSlotCount() + 1);
+        }
 
         Record record = new Record();
         record.setLength( totalRecordSize);
@@ -78,35 +85,30 @@ public class RecordManagerImpl implements RecordManager {
         LogRecord undoLog = LogRecord.createUndoLog(
                 xid,
                 LogRecord.UNDO_INSERT,
-                (short) page.getSlotDirectory().get(record.getSlotId()).getOffset(),
+                (short) offset,
                 record.getData(),
                 page.getHeader().getPageId()
         );
         logManager.appendLog(undoLog);
 
-        // 插入逻辑：包含槽位管理
-        int slotId = findReusableSlot(page);
-        if (slotId == -1) {
-            slotId = page.getSlotDirectory().size();
-            page.getSlotDirectory().add(null); // 占位
-            page.getHeader().setSlotCount(page.getHeader().getSlotCount() + 1);
-        }
 
         record.setPageId(page.getHeader().getPageId());
         record.setSlotId(slotId);
-        page.getRecords().add(record);
 
         SlotDirectoryEntry slot = SlotDirectoryEntry.builder()
                 .offset(offset)
                 .inUse(true)
                 .build();
 
+        page.getRecords().add(record);
         page.getSlotDirectory().set(slotId, slot);
         page.getHeader().setRecordCount(page.getHeader().getRecordCount() + 1);
         page.setDirty(true);
+
         LogRecord logRecorde = LogRecord.createRedoLog(xid,page.getHeader().getPageId(), (short) offset,data);
         // 插入日志和事务
         logManager.appendLog(logRecorde);
+
         transactionManager.getModifiedPages(xid).add(page);
 
         return record;
@@ -241,8 +243,15 @@ public class RecordManagerImpl implements RecordManager {
         }
         return validRecords;
     }
-
-
+    @Override
+    public void rollbackTransaction(long xid) throws IOException {
+        List<LogRecord> undoLogs = transactionManager.getUndoLogs(xid);
+        for (int i = undoLogs.size() - 1; i >= 0; i--) {
+            LogRecord log = undoLogs.get(i);
+            Page page = pageManager.readPage(log.getPageID());
+            rollbackRecord(page, log);
+        }
+    }
 
     @Override
     public boolean isValidRecord(Record record) {

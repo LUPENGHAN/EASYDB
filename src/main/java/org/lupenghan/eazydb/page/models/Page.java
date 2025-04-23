@@ -7,7 +7,6 @@ import lombok.Data;
 import java.util.ArrayList;
 import java.util.List;
 
-@Builder
 @Data
 public class Page {
     private static final int PAGE_SIZE = 4096; // 4KB页面大小
@@ -51,6 +50,7 @@ public class Page {
         this.pinCount = 0;
         this.lastAccessTime = System.currentTimeMillis();
     }
+
     //pin 相关
     public void pin() {
         pinCount++;

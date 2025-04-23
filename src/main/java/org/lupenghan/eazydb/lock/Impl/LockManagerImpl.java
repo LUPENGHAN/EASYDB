@@ -41,6 +41,23 @@ public class LockManagerImpl implements LockManager {
 
             System.out.println("尝试获取锁: 事务=" + xid + ", 类型=" + type + ", 页面ID=" + pageId + ", 槽位ID=" + slotId);
 
+            // 检查事务是否已经持有这个资源的锁
+            List<Lock> existingLocks = lockTable.get(resourceId);
+            if (existingLocks != null) {
+                for (Lock existingLock : existingLocks) {
+                    if (existingLock.getXid() == xid) {
+                        // 如果已有锁的类型大于或等于请求的锁类型，直接返回
+                        if (existingLock.getType().getValue() >= type.getValue()) {
+                            return existingLock;
+                        }
+                        // 如果请求更高级别的锁，尝试升级
+                        else if (type == LockType.EXCLUSIVE_LOCK && existingLock.getType() == LockType.SHARED_LOCK) {
+                            return upgradeLock(existingLock);
+                        }
+                    }
+                }
+            }
+
             if (globalLock.tryLock(LOCK_TIMEOUT, TimeUnit.MILLISECONDS)) {
                 try {
                     // 获取资源对应的锁列表
